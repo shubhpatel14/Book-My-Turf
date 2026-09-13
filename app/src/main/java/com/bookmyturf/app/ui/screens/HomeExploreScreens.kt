@@ -249,16 +249,16 @@ private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController
         initialValue = 0f,
         targetValue = 6.283185f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 11000, easing = LinearEasing),
+            animation = tween(durationMillis = 5800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "w1"
     )
     val glowPulse by infiniteTransition.animateFloat(
-        initialValue = .92f,
-        targetValue = 1.08f,
+        initialValue = .90f,
+        targetValue = 1.10f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5500, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 3600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse"
@@ -267,16 +267,16 @@ private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController
     Box(
         Modifier
             .fillMaxWidth()
-            .height(136.dp)
+            .height(112.dp)
             .drawWithCache {
                 val w = size.width
                 val h = size.height
-                val amp1a = 14.dp.toPx()
-                val amp1b = 6.dp.toPx()
+                val amp1a = 11.dp.toPx()
+                val amp1b = 5.dp.toPx()
 
                 val path1 = Path().apply {
                     moveTo(0f, 0f)
-                    val base1 = h * .68f
+                    val base1 = h * .72f
                     var x = 0f
                     while (x <= w) {
                         val nx = x / w
@@ -329,8 +329,8 @@ private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController
                 val bottomFade = Brush.verticalGradient(
                     colorStops = arrayOf(
                         0f to Color.Transparent,
-                        .48f to Color.Transparent,
-                        .76f to Ink.copy(alpha = .72f),
+                        .42f to Color.Transparent,
+                        .70f to Ink.copy(alpha = .75f),
                         1f to Ink
                     ),
                     startY = 0f,
@@ -349,7 +349,7 @@ private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController
             Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 6.dp),
+                .padding(horizontal = 18.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Default.LocationOn, null, tint = Color.White.copy(.95f), modifier = Modifier.size(28.dp))
@@ -498,9 +498,7 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
             }
             item(key = "spotlight") {
                 val visible by remember { derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == "spotlight" } } }
-                Box(Modifier.padding(horizontal = 16.dp)) {
-                    HomeHighlights(onSport = { selectedSport = it }, isVisible = visible)
-                }
+                HomeHighlights(onSport = { selectedSport = it }, isVisible = visible)
             }
             item(key = "explore-title") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {

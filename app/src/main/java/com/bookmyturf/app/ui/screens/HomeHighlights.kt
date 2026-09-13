@@ -70,29 +70,29 @@ fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("In the spotlight", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("In the spotlight", Modifier.padding(horizontal = 16.dp), fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
         HorizontalPager(
             state = pager,
             pageSpacing = 12.dp,
-            contentPadding = PaddingValues(horizontal = 44.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp),
             key = { it }
         ) { page ->
             val item = spotlights[page % spotlights.size]
             Card(
                 onClick = { onSport(item.sport) },
-                modifier = Modifier.fillMaxWidth().height(270.dp),
+                modifier = Modifier.fillMaxWidth().height(320.dp),
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = Charcoal)
             ) {
                 Box(Modifier.fillMaxSize()) {
                     Image(painterResource(item.image), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.04f), Ink.copy(.45f)))))
-                    Surface(Modifier.align(Alignment.TopStart).padding(12.dp), color = Ink.copy(.75f), shape = RoundedCornerShape(12.dp)) {
-                        Text(item.kicker, Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = item.accent, style = MaterialTheme.typography.labelSmall)
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.04f), Ink.copy(.52f)))))
+                    Surface(Modifier.align(Alignment.TopStart).padding(14.dp), color = Ink.copy(.75f), shape = RoundedCornerShape(12.dp)) {
+                        Text(item.kicker, Modifier.padding(horizontal = 12.dp, vertical = 7.dp), color = item.accent, style = MaterialTheme.typography.labelSmall)
                     }
-                    Surface(Modifier.align(Alignment.TopEnd).padding(12.dp), color = Ink.copy(.72f), shape = RoundedCornerShape(12.dp)) {
-                        Text("DEMO", Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = Color.White.copy(.78f), style = MaterialTheme.typography.labelSmall)
+                    Surface(Modifier.align(Alignment.TopEnd).padding(14.dp), color = Ink.copy(.72f), shape = RoundedCornerShape(12.dp)) {
+                        Text("DEMO", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = Color.White.copy(.78f), style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
