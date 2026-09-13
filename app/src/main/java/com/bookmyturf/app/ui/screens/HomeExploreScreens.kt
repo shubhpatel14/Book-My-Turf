@@ -21,6 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import kotlin.math.sin
+import kotlin.math.cos
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
@@ -236,34 +241,124 @@ private fun NextGameCard(onOpen: () -> Unit) {
     }
 }
 
+
 @Composable
 private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController) {
+    val infiniteTransition = rememberInfiniteTransition(label = "waterWaves")
+    val phase1 by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.283185f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 11000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "w1"
+    )
+    val glowPulse by infiniteTransition.animateFloat(
+        initialValue = .92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 5500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
     Box(
-        Modifier.fillMaxWidth().height(94.dp).drawWithCache {
-            val glow = Brush.radialGradient(
-                colorStops = arrayOf(
-                    0f to PulsePurple.copy(.34f),
-                    .38f to PulsePurpleDark.copy(.18f),
-                    .72f to PulsePurpleDark.copy(.055f),
-                    1f to Color.Transparent
-                ),
-                center = Offset(size.width * .56f, -size.height * .12f),
-                radius = size.width * .5f
-            )
-            onDrawBehind { drawRect(glow) }
-        }
+        Modifier
+            .fillMaxWidth()
+            .height(136.dp)
+            .drawWithCache {
+                val w = size.width
+                val h = size.height
+                val amp1a = 14.dp.toPx()
+                val amp1b = 6.dp.toPx()
+
+                val path1 = Path().apply {
+                    moveTo(0f, 0f)
+                    val base1 = h * .68f
+                    var x = 0f
+                    while (x <= w) {
+                        val nx = x / w
+                        val a1 = (6.283185f * nx * 1.15f) + phase1
+                        val a2 = (6.283185f * nx * 2.1f) - (phase1 * .6f)
+                        val y = base1 + (amp1a * sin(a1)) + (amp1b * cos(a2))
+                        lineTo(x, y)
+                        x += 8f
+                    }
+                    val e1 = (6.283185f * 1.15f) + phase1
+                    val e2 = (6.283185f * 2.1f) - (phase1 * .6f)
+                    val endY = base1 + (amp1a * sin(e1)) + (amp1b * cos(e2))
+                    lineTo(w, endY)
+                    lineTo(w, 0f)
+                    close()
+                }
+
+                val ambientGlow = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to PulsePurple.copy(alpha = .44f * glowPulse),
+                        .36f to PulsePurpleDark.copy(alpha = .26f * glowPulse),
+                        .72f to PulsePurpleDark.copy(alpha = .07f),
+                        1f to Color.Transparent
+                    ),
+                    center = Offset(w * .56f, -h * .08f),
+                    radius = w * .62f * glowPulse
+                )
+
+                val leftGlow = Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to PulseLavender.copy(alpha = .18f * glowPulse),
+                        .5f to PulsePurple.copy(alpha = .05f),
+                        1f to Color.Transparent
+                    ),
+                    center = Offset(w * .12f, h * .22f),
+                    radius = w * .42f
+                )
+
+                val wave1Brush = Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to PulsePurpleDark.copy(alpha = .48f),
+                        .38f to PulsePurpleDark.copy(alpha = .28f),
+                        .72f to PulsePurpleDark.copy(alpha = .07f),
+                        1f to Color.Transparent
+                    ),
+                    startY = 0f,
+                    endY = h
+                )
+
+                val bottomFade = Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Transparent,
+                        .48f to Color.Transparent,
+                        .76f to Ink.copy(alpha = .72f),
+                        1f to Ink
+                    ),
+                    startY = 0f,
+                    endY = h
+                )
+
+                onDrawBehind {
+                    drawRect(ambientGlow)
+                    drawRect(leftGlow)
+                    drawPath(path1, wave1Brush)
+                    drawRect(bottomFade)
+                }
+            }
     ) {
         Row(
-            Modifier.fillMaxWidth().height(70.dp).statusBarsPadding().padding(horizontal = 18.dp),
+            Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.LocationOn, null, tint = Color.White.copy(.9f), modifier = Modifier.size(28.dp))
+            Icon(Icons.Default.LocationOn, null, tint = Color.White.copy(.95f), modifier = Modifier.size(28.dp))
             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                 Text("PLAYING NEAR", color = PulseLavender, fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                Text(location, fontFamily = ManropeUi, fontWeight = FontWeight.Medium, maxLines = 2)
+                Text(location, color = Color.White, fontFamily = ManropeUi, fontWeight = FontWeight.Medium, maxLines = 2)
             }
             BadgedBox(badge = { if (unread > 0) Badge(containerColor = PulsePurple, contentColor = Color.White) { Text(unread.toString()) } }) {
-                IconButton(onClick = { nav.navigate(Routes.NOTIFICATIONS) }) { Icon(Icons.Outlined.Notifications, "Notifications") }
+                IconButton(onClick = { nav.navigate(Routes.NOTIFICATIONS) }) { Icon(Icons.Outlined.Notifications, "Notifications", tint = Color.White) }
             }
             IconButton(onClick = { nav.navigate(Routes.PROFILE) }) {
                 Icon(Icons.Outlined.AccountCircle, "Profile", modifier = Modifier.size(31.dp), tint = Color.White)
