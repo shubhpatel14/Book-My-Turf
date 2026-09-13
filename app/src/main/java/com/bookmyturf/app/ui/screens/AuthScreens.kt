@@ -41,17 +41,18 @@ fun SplashScreen(onDone: () -> Unit) {
     val scale by animateFloatAsState(if (shown) 1f else .86f, tween(380, easing = FastOutSlowInEasing), label = "splash")
     val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(300), label = "splashAlpha")
     LaunchedEffect(Unit) { shown = true; delay(1_200); onDone() }
-    Box(Modifier.fillMaxSize().background(Ink), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.verticalGradient(listOf(Color(0xFF4920C8), PulsePurpleDark))
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(Modifier.size(310.dp).background(Color.White.copy(.025f), CircleShape))
+        Box(Modifier.size(220.dp).background(Color.White.copy(.035f), CircleShape))
         Column(Modifier.scale(scale).alpha(alpha), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(142.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(118.dp).background(Lime.copy(.1f), CircleShape))
-                AnimatedBrandCrest(Modifier.size(132.dp))
-            }
-            Text("BOOKMYTURF", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black, letterSpacing = (-.8).sp)
-            Spacer(Modifier.height(14.dp)); Box(Modifier.width(72.dp).height(3.dp).background(Lime)); Spacer(Modifier.height(14.dp))
-            Text("BOOK. PLAY. DOMINATE.", color = Lime, style = MaterialTheme.typography.labelMedium, letterSpacing = 2.sp)
+            BrandMark()
         }
-        Text("INDIA'S GAME. ONE APP.", Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp), color = TextMuted.copy(.65f), style = MaterialTheme.typography.labelMedium)
+        Text("INDIA'S GAME. ONE APP.", Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 30.dp), color = WarmWhite.copy(.7f), style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -97,7 +98,7 @@ private fun AppTextField(value: String, onValueChange: (String) -> Unit, label: 
         value = value, onValueChange = onValueChange, label = { Text(label) }, leadingIcon = { Icon(icon, null) },
         visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType), singleLine = true, modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Lime, focusedLabelColor = Lime, unfocusedBorderColor = Line)
+        shape = RoundedCornerShape(14.dp), colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PulseLavender, focusedLabelColor = PulseLavender, unfocusedBorderColor = Line)
     )
 }
 
@@ -106,34 +107,49 @@ fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit, onReg
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(24.dp)) {
-        Spacer(Modifier.height(28.dp)); BrandMark(); Spacer(Modifier.height(54.dp))
-        Text("WELCOME\nBACK, PLAYER.", style = MaterialTheme.typography.displayMedium)
-        Spacer(Modifier.height(10.dp)); Text("Sign in and get back in the game.", color = TextMuted)
-        Spacer(Modifier.height(30.dp))
-        AppTextField(identifier, { identifier = it }, "Mobile number or email", Icons.Default.Person)
-        Spacer(Modifier.height(14.dp)); AppTextField(password, { password = it }, "Password", Icons.Default.Lock, true)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { error = "Password reset link simulated for demo." }) { Text("FORGOT PASSWORD?", color = Lime, style = MaterialTheme.typography.labelMedium) } }
-        if (error != null) Text(error!!, color = if (error!!.contains("simulated")) TextMuted else Danger, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(8.dp))
-        PrimaryButton("Login", onClick = {
-            if (vm.login(identifier, password)) { if (vm.authRole.value == AuthRole.ADMIN) onAdmin() else onUser() }
-            else error = "Enter a valid email/mobile and a password with 6+ characters."
-        })
-        Spacer(Modifier.height(16.dp))
-        OutlinedButton(onClick = { vm.login("demo@bookmyturf.app", "player123"); onUser() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
-            Icon(Icons.Default.SportsSoccer, null); Spacer(Modifier.width(10.dp)); Text("CONTINUE WITH DEMO USER", style = MaterialTheme.typography.labelLarge)
+    Column(Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).imePadding()) {
+        Box(
+            Modifier.fillMaxWidth().height(250.dp).background(
+                Brush.verticalGradient(listOf(Color(0xFF4B23C7), PulsePurpleDark, Ink))
+            )
+        ) {
+            Box(Modifier.size(220.dp).align(Alignment.TopEnd).offset(x = 60.dp, y = (-45).dp).background(Color.White.copy(.035f), CircleShape))
+            BrandMark(Modifier.align(Alignment.Center))
         }
-        Spacer(Modifier.height(22.dp))
-        Surface(color = Steel, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Lime.copy(.25f))) {
-            Column(Modifier.padding(16.dp)) {
-                Text("DEMO ADMIN CREDENTIALS", color = Lime, style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(8.dp)); Text("admin@bookmyturf.demo", fontWeight = FontWeight.Bold); Text("Admin@12345", color = TextMuted)
-                Spacer(Modifier.height(8.dp)); TextButton(onClick = { identifier = "admin@bookmyturf.demo"; password = "Admin@12345" }, contentPadding = PaddingValues(0.dp)) { Text("USE CREDENTIALS", color = Lime) }
+        Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding()) {
+            Text("YOUR NEXT GAME\nSTARTS HERE.", style = MaterialTheme.typography.displayMedium)
+            Spacer(Modifier.height(8.dp)); Text("Sign in to discover and book arenas near you.", color = TextMuted)
+            Spacer(Modifier.height(26.dp))
+            AppTextField(identifier, { identifier = it }, "Mobile number or email", Icons.Default.Person)
+            Spacer(Modifier.height(14.dp)); AppTextField(password, { password = it }, "Password", Icons.Default.Lock, true)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { error = "Password reset link simulated for demo." }) { Text("FORGOT PASSWORD?", color = PulseLavender, style = MaterialTheme.typography.labelMedium) } }
+            if (error != null) Text(error!!, color = if (error!!.contains("simulated")) TextMuted else Danger, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (vm.login(identifier, password)) { if (vm.authRole.value == AuthRole.ADMIN) onAdmin() else onUser() }
+                    else error = "Enter a valid email/mobile and a password with 6+ characters."
+                },
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = PulsePurple, contentColor = Color.White)
+            ) { Text("CONTINUE", fontWeight = FontWeight.ExtraBold) }
+            Spacer(Modifier.height(14.dp))
+            OutlinedButton(onClick = { vm.login("demo@bookmyturf.app", "player123"); onUser() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Line)) {
+                Icon(Icons.Default.SportsSoccer, null); Spacer(Modifier.width(10.dp)); Text("CONTINUE WITH DEMO USER", style = MaterialTheme.typography.labelLarge)
             }
+            Spacer(Modifier.height(20.dp))
+            Surface(color = Steel, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, PulsePurple.copy(.42f))) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("DEMO ADMIN CREDENTIALS", color = PulseLavender, style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(8.dp)); Text("admin@bookmyturf.demo", fontWeight = FontWeight.Bold); Text("Admin@12345", color = TextMuted)
+                    Spacer(Modifier.height(8.dp)); TextButton(onClick = { identifier = "admin@bookmyturf.demo"; password = "Admin@12345" }, contentPadding = PaddingValues(0.dp)) { Text("USE CREDENTIALS", color = PulseLavender) }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Text("NEW HERE?", color = TextMuted, style = MaterialTheme.typography.labelMedium); TextButton(onClick = onRegister) { Text("CREATE ACCOUNT", color = PulseLavender, style = MaterialTheme.typography.labelMedium) } }
+            Spacer(Modifier.height(18.dp))
         }
-        Spacer(Modifier.height(18.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Text("NEW TO THE ARENA?", color = TextMuted, style = MaterialTheme.typography.labelMedium); TextButton(onClick = onRegister) { Text("CREATE ACCOUNT", color = Lime, style = MaterialTheme.typography.labelMedium) } }
     }
 }
 

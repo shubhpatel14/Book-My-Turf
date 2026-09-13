@@ -50,21 +50,19 @@ private val turfHorizontalOverlay = Brush.horizontalGradient(
 
 @Composable
 fun BrandMark(modifier: Modifier = Modifier, compact: Boolean = false, animatedCrest: Boolean = true) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(if (compact) 52.dp else 80.dp), contentAlignment = Alignment.Center) {
-            if (animatedCrest) {
-                AnimatedBrandCrest(Modifier.size(if (compact) 52.dp else 80.dp))
-            } else {
-                Image(
-                    painter = painterResource(R.drawable.brand_bmt_crest), contentDescription = "BookMyTurf crest",
-                    modifier = Modifier.size(if (compact) 63.dp else 94.dp), contentScale = ContentScale.Fit
-                )
-            }
-        }
-        Spacer(Modifier.width(if (compact) 4.dp else 8.dp))
-        Column {
-            Text("BOOKMYTURF", fontFamily = AthleticDisplay, fontSize = if (compact) 25.sp else 34.sp, lineHeight = if (compact) 26.sp else 35.sp, fontWeight = FontWeight.Normal, letterSpacing = 1.sp)
-            if (!compact) Text("BOOK. PLAY. DOMINATE.", color = Lime, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.2.sp)
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "bookmyturf",
+            color = WarmWhite,
+            fontFamily = ManropeUi,
+            fontSize = if (compact) 27.sp else 43.sp,
+            lineHeight = if (compact) 30.sp else 46.sp,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = (-2.1).sp
+        )
+        if (!compact) {
+            Spacer(Modifier.height(4.dp))
+            Text("BOOK  •  PLAY  •  DOMINATE", color = PulseLavender, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.5.sp)
         }
     }
 }

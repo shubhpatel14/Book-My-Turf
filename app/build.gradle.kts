@@ -11,8 +11,8 @@ android {
         applicationId = "com.bookmyturf.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.2-demo"
+        versionCode = 14
+        versionName = "1.0.13-demo"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

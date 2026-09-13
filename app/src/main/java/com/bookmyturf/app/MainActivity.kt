@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -46,6 +47,13 @@ object Routes {
     fun slots(id: String) = "slots/$id"
 }
 
+private val mainTabs = listOf(Routes.USER, Routes.EXPLORE, Routes.BOOKINGS, Routes.PROFILE)
+private fun tabDirection(from: String?, to: String?): Int {
+    val fromIndex = mainTabs.indexOf(from)
+    val toIndex = mainTabs.indexOf(to)
+    return if (fromIndex >= 0 && toIndex >= 0 && toIndex < fromIndex) -1 else 1
+}
+
 @Composable
 fun BookMyTurfRoot() {
     val context = LocalContext.current
@@ -62,10 +70,22 @@ fun BookMyTurfRoot() {
         NavHost(
             navController = nav,
             startDestination = Routes.SPLASH,
-            enterTransition = { fadeIn(tween(150)) + slideInHorizontally(tween(180)) { it / 18 } },
-            exitTransition = { fadeOut(tween(110)) },
-            popEnterTransition = { fadeIn(tween(140)) },
-            popExitTransition = { slideOutHorizontally(tween(160)) { it / 18 } + fadeOut(tween(110)) }
+            enterTransition = {
+                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
+                fadeIn(tween(220)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { direction * it / 5 }
+            },
+            exitTransition = {
+                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
+                fadeOut(tween(190)) + slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -direction * it / 8 }
+            },
+            popEnterTransition = {
+                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
+                fadeIn(tween(220)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { direction * it / 5 }
+            },
+            popExitTransition = {
+                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
+                fadeOut(tween(190)) + slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -direction * it / 8 }
+            }
         ) {
             composable(Routes.SPLASH) { SplashScreen { nav.navigate(Routes.ONBOARDING) { popUpTo(Routes.SPLASH) { inclusive = true } } } }
             composable(Routes.ONBOARDING) { OnboardingScreen(onDone = { nav.navigate(Routes.LOGIN) { popUpTo(Routes.ONBOARDING) { inclusive = true } } }) }

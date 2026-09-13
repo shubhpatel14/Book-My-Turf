@@ -24,6 +24,10 @@ val Orange = Color(0xFFFF7A18)
 val TextPrimary = Color(0xFFF5F7F2)
 val TextMuted = Color(0xFF9CA39A)
 val Danger = Color(0xFFFF5C5C)
+val PulsePurple = Color(0xFF6C42F5)
+val PulsePurpleDark = Color(0xFF32127A)
+val PulseLavender = Color(0xFFAE98FF)
+val WarmWhite = Color(0xFFFFF8EA)
 
 val AthleticDisplay = FontFamily(Font(R.font.bebas_neue, weight = FontWeight.Normal))
 val ManropeUi = FontFamily(

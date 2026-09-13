@@ -16,21 +16,30 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.bookmyturf.app.Routes
 import com.bookmyturf.app.R
 import com.bookmyturf.app.data.Sport
+import com.bookmyturf.app.data.Turf
 import com.bookmyturf.app.data.UserProfile
 import com.bookmyturf.app.ui.AppViewModel
 import com.bookmyturf.app.ui.components.*
@@ -61,16 +70,65 @@ private val userNav = listOf(
     UserNav("Home", Icons.Default.Home, Routes.USER), UserNav("Explore", Icons.Default.Search, Routes.EXPLORE),
     UserNav("Bookings", Icons.Default.ConfirmationNumber, Routes.BOOKINGS), UserNav("Profile", Icons.Default.Person, Routes.PROFILE)
 )
+private var previousBottomNavigationIndex = 0
 
 @Composable
 fun UserBottomBar(current: String, nav: NavController) {
-    NavigationBar(containerColor = Charcoal, tonalElevation = 0.dp) {
-        userNav.forEach { item ->
-            NavigationBarItem(
-                selected = current == item.route, onClick = { if (current != item.route) nav.navigate(item.route) { launchSingleTop = true } },
-                icon = { Icon(item.icon, item.label) }, label = { Text(item.label.uppercase(), style = MaterialTheme.typography.labelMedium) },
-                colors = NavigationBarItemDefaults.colors(selectedIconColor = Ink, selectedTextColor = Lime, indicatorColor = Lime, unselectedIconColor = TextMuted, unselectedTextColor = TextMuted)
-            )
+    val selectedIndex = userNav.indexOfFirst { it.route == current }.coerceAtLeast(0)
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().navigationBarsPadding().height(86.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val barWidth = if (maxWidth > 390.dp) 360.dp else maxWidth - 28.dp
+        Surface(
+            modifier = Modifier.width(barWidth).height(68.dp).shadow(18.dp, RoundedCornerShape(34.dp)),
+            color = Color(0xF2242429),
+            shape = RoundedCornerShape(34.dp),
+            border = BorderStroke(1.dp, Color.White.copy(.07f))
+        ) {
+            BoxWithConstraints {
+                val itemWidth = maxWidth / userNav.size
+                val trackerWidth = itemWidth - 8.dp
+                val tracker = remember(current) { Animatable(previousBottomNavigationIndex.toFloat()) }
+                LaunchedEffect(selectedIndex) {
+                    tracker.animateTo(selectedIndex.toFloat(), spring(dampingRatio = .72f, stiffness = 360f))
+                    previousBottomNavigationIndex = selectedIndex
+                }
+                Box(
+                    Modifier.offset(x = itemWidth * tracker.value + 4.dp, y = 4.dp).width(trackerWidth).height(60.dp)
+                        .background(Color.White.copy(.09f), RoundedCornerShape(30.dp))
+                        .border(1.dp, PulseLavender.copy(.18f), RoundedCornerShape(30.dp))
+                )
+                Row(Modifier.fillMaxSize()) {
+                    userNav.forEach { item ->
+                        val selected = item.route == current
+                        val motion = remember { Animatable(0f) }
+                        LaunchedEffect(selected) { motion.animateTo(if (selected) 1f else 0f, spring(dampingRatio = .45f, stiffness = 380f)) }
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().selectable(selected, role = Role.Tab, onClick = {
+                                if (!selected) nav.navigate(item.route) {
+                                    popUpTo(Routes.USER) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }).padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Icon(
+                                item.icon, item.label, tint = if (selected) Color.White else TextMuted,
+                                modifier = Modifier.size(24.dp).graphicsLayer {
+                                    val p = motion.value
+                                    scaleX = 1f + p * .12f; scaleY = scaleX
+                                    rotationZ = if (item.route == Routes.EXPLORE) p * 360f else 0f
+                                    translationY = if (item.route == Routes.BOOKINGS) p * -6f else 0f
+                                }
+                            )
+                            Text(item.label, color = if (selected) Color.White else TextMuted, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -179,20 +237,116 @@ private fun NextGameCard(onOpen: () -> Unit) {
 }
 
 @Composable
-private fun SportTile(sport: Sport, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(if (pressed) .94f else 1f, tween(110), label = "sportPress")
-    Surface(
-        modifier = Modifier.width(92.dp).scale(pressScale).clickable(interactionSource = interaction, indication = LocalIndication.current, onClick = onClick),
-        color = if (pressed) Lime.copy(.1f) else Steel,
-        shape = RoundedCornerShape(8.dp),
-        border = BorderStroke(1.dp, if (pressed) Lime else Line)
+private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController) {
+    Box(
+        Modifier.fillMaxWidth().height(94.dp).drawWithCache {
+            val glow = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0f to PulsePurple.copy(.34f),
+                    .38f to PulsePurpleDark.copy(.18f),
+                    .72f to PulsePurpleDark.copy(.055f),
+                    1f to Color.Transparent
+                ),
+                center = Offset(size.width * .56f, -size.height * .12f),
+                radius = size.width * .5f
+            )
+            onDrawBehind { drawRect(glow) }
+        }
     ) {
-        Column(Modifier.padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            SportIcon(sport, Modifier.size(26.dp))
+        Row(
+            Modifier.fillMaxWidth().height(70.dp).statusBarsPadding().padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.LocationOn, null, tint = Color.White.copy(.9f), modifier = Modifier.size(28.dp))
+            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                Text("PLAYING NEAR", color = PulseLavender, fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                Text(location, fontFamily = ManropeUi, fontWeight = FontWeight.Medium, maxLines = 2)
+            }
+            BadgedBox(badge = { if (unread > 0) Badge(containerColor = PulsePurple, contentColor = Color.White) { Text(unread.toString()) } }) {
+                IconButton(onClick = { nav.navigate(Routes.NOTIFICATIONS) }) { Icon(Icons.Outlined.Notifications, "Notifications") }
+            }
+            IconButton(onClick = { nav.navigate(Routes.PROFILE) }) {
+                Icon(Icons.Outlined.AccountCircle, "Profile", modifier = Modifier.size(31.dp), tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedSearchHint(selectedSport: Sport?, selectedCity: String?) {
+    val hints = remember {
+        listOf(
+            "turfs near you",
+            "sports & arenas",
+            "locations & areas",
+            "tournaments & offers"
+        )
+    }
+    var hintIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selectedSport, selectedCity) {
+        if (selectedSport == null && selectedCity == null) {
+            while (isActive) {
+                delay(2_500)
+                hintIndex = (hintIndex + 1) % hints.size
+            }
+        }
+    }
+    val text = when {
+        selectedSport != null && selectedCity != null -> "${selectedSport.label} turfs in $selectedCity"
+        selectedSport != null -> "${selectedSport.label} turfs near you"
+        selectedCity != null -> "turfs in $selectedCity"
+        else -> hints[hintIndex]
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Search ", color = TextMuted, fontFamily = ManropeUi, style = MaterialTheme.typography.bodyMedium)
+        Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.CenterStart) {
+            AnimatedContent(
+                targetState = text,
+                transitionSpec = {
+                    (slideInVertically(tween(320, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(220))) togetherWith
+                        (slideOutVertically(tween(320, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(180)))
+                },
+                label = "searchHint"
+            ) { hint ->
+                Text(
+                    hint,
+                    color = TextMuted,
+                    fontFamily = ManropeUi,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTurfPosterCard(turf: Turf, onOpen: () -> Unit, onFavorite: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        onClick = onOpen,
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = Charcoal),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Line)
+    ) {
+        Box {
+            TurfVisual(turf.visualSeed, Modifier.fillMaxWidth().height(198.dp))
+            Surface(Modifier.align(Alignment.TopStart).padding(9.dp), color = Ink.copy(.74f), shape = RoundedCornerShape(10.dp)) {
+                Text("${3 + turf.visualSeed.mod(5)} SLOTS", Modifier.padding(horizontal = 8.dp, vertical = 5.dp), color = PulseLavender, style = MaterialTheme.typography.labelSmall)
+            }
+            IconButton(onClick = onFavorite, Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+                Icon(if (turf.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, "Favorite", tint = if (turf.isFavorite) PulseLavender else Color.White)
+            }
+        }
+        Column(Modifier.padding(12.dp)) {
+            Text(turf.name, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text("${turf.area} • ${turf.distanceKm} km", color = TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             Spacer(Modifier.height(8.dp))
-            Text(sport.label.uppercase(), style = MaterialTheme.typography.labelMedium, color = if (pressed) Lime else LocalContentColor.current)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Star, null, Modifier.size(15.dp), tint = Color(0xFFFFA24C)); Text(" ${turf.rating}", style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.weight(1f)); Text("₹${turf.pricePerHour}/hr", color = PulseLavender, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
@@ -200,44 +354,138 @@ private fun SportTile(sport: Sport, onClick: () -> Unit) {
 @Composable
 fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
     val turfs by vm.turfs.collectAsStateWithLifecycle()
-    val bookings by vm.bookings.collectAsStateWithLifecycle()
     val profile by vm.profile
-    val greeting by produceState(initialValue = "") {
-        while (true) {
-            value = when (LocalTime.now().hour) {
-                in 5..11 -> "GOOD MORNING,"
-                in 12..16 -> "GOOD AFTERNOON,"
-                else -> "GOOD EVENING,"
-            }
-            delay(60_000)
-        }
+    val notifications by vm.notifications.collectAsStateWithLifecycle()
+    var selectedSport by rememberSaveable { mutableStateOf<Sport?>(null) }
+    var selectedCity by rememberSaveable { mutableStateOf<String?>(null) }
+    var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showOffer by rememberSaveable { mutableStateOf(true) }
+    val listState = rememberLazyListState()
+    val filteredTurfs = remember(turfs, selectedSport, selectedCity) {
+        turfs.filter { turf ->
+            turf.active && (selectedSport == null || selectedSport in turf.sports) &&
+                (selectedCity == null || turf.city == selectedCity)
+        }.sortedBy { it.distanceKm }
     }
-    val firstName = profile.name.substringBefore(' ').uppercase()
-    UserScaffold(Routes.USER, nav) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { StaggeredReveal(0) { Column { Spacer(Modifier.height(4.dp)); Text(greeting, color = TextMuted, style = MaterialTheme.typography.labelLarge); Text("READY, $firstName?", style = MaterialTheme.typography.headlineLarge); Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.LocationOn, null, Modifier.size(16.dp), tint = Lime); Text(" ${profile.location}", color = TextMuted) } } } }
-            item { StaggeredReveal(1) { PlayerGameProfile(nav, profile, (bookings.size + 5).coerceAtLeast(8)) } }
-            item {
-                StaggeredReveal(2) { Surface(onClick = { nav.navigate(Routes.EXPLORE) }, color = Charcoal, shape = RoundedCornerShape(9.dp), border = BorderStroke(1.dp, Line)) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Search, null, tint = TextMuted); Spacer(Modifier.width(12.dp)); Text("Search turfs, sports or locations", color = TextMuted); Spacer(Modifier.weight(1f)); Icon(Icons.Default.Tune, null, tint = Lime) }
-                } }
+    val locationLabel = selectedCity?.let { "$it, India" } ?: profile.location
+
+    Scaffold(
+        bottomBar = { UserBottomBar(Routes.USER, nav) },
+        containerColor = Ink,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { padding ->
+        LazyColumn(
+            Modifier.fillMaxSize().padding(padding),
+            state = listState,
+            contentPadding = PaddingValues(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(15.dp)
+        ) {
+            item(key = "header") {
+                DistrictHomeTopBar(locationLabel, notifications.count { it.unread }, nav)
             }
-            item { StaggeredReveal(3) { HomeHero { nav.navigate(Routes.EXPLORE) } } }
-            item { StaggeredReveal(4) { NextGameCard { nav.navigate(Routes.BOOKINGS) } } }
-            item { SectionTitle("Choose your sport") }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(Sport.entries) { sport ->
-                        SportTile(sport) { nav.navigate(Routes.EXPLORE) }
+            item(key = "search") {
+                Surface(
+                    onClick = { showSearch = true },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Steel,
+                    shape = RoundedCornerShape(17.dp),
+                    border = BorderStroke(1.dp, Line)
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Search, null, tint = Color.White.copy(.8f))
+                        Spacer(Modifier.width(12.dp))
+                        Box(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.CenterStart) {
+                            AnimatedSearchHint(selectedSport, selectedCity)
+                        }
+                        Icon(Icons.Default.Tune, "Search filters", tint = PulseLavender)
                     }
                 }
             }
-            item { SectionTitle("Nearby turfs", "See all") { nav.navigate(Routes.EXPLORE) } }
-            itemsIndexed(turfs.take(3), key = { _, item -> item.id }) { index, turf ->
-                StaggeredReveal(index + 5) { TurfCard(turf, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) }) }
+            item(key = "spotlight") {
+                val visible by remember { derivedStateOf { listState.layoutInfo.visibleItemsInfo.any { it.key == "spotlight" } } }
+                Box(Modifier.padding(horizontal = 16.dp)) {
+                    HomeHighlights(onSport = { selectedSport = it }, isVisible = visible)
+                }
+            }
+            item(key = "explore-title") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Explore", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineMedium)
+                        Text("Pick a sport and find your arena", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (selectedSport != null) TextButton(onClick = { selectedSport = null }) { Text("SHOW ALL", color = PulseLavender) }
+                }
+            }
+            item(key = "sports") {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(Sport.entries, key = { it.name }) { sport ->
+                        HomeSportTile(sport, selectedSport == sport) {
+                            selectedSport = if (selectedSport == sport) null else sport
+                        }
+                    }
+                }
+            }
+            if (showOffer) item(key = "offer") {
+                Surface(
+                    onClick = { vm.showMessage("FIRSTGAME copied • Demo offer") },
+                    color = Steel,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(.07f))
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(48.dp).background(PulsePurple.copy(.28f), CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.LocalOffer, null, tint = PulseLavender)
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                            Text("Get 20% off your first game", fontWeight = FontWeight.ExtraBold)
+                            Text("Tap to use FIRSTGAME • Demo offer", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = { showOffer = false }) { Icon(Icons.Default.Close, "Dismiss offer", tint = TextMuted) }
+                    }
+                }
+            }
+            item(key = "turf-title") {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        selectedSport?.let { "${it.label} picks for you" } ?: "Curated for you",
+                        fontFamily = ManropeUi,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                    Text("${filteredTurfs.size} places • Nearest first", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (filteredTurfs.isEmpty()) {
+                item(key = "empty") {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.SearchOff, null, Modifier.size(42.dp), tint = PulseLavender)
+                        Spacer(Modifier.height(10.dp)); Text("NO TURFS FOUND", style = MaterialTheme.typography.titleLarge)
+                        Text("Try another location or sport.", color = TextMuted)
+                        TextButton(onClick = { selectedCity = null; selectedSport = null }) { Text("CLEAR FILTERS", color = PulseLavender) }
+                    }
+                }
+            } else {
+                items(filteredTurfs.chunked(2), key = { row -> row.joinToString("-") { it.id } }) { row ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { turf ->
+                            HomeTurfPosterCard(turf, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) }, Modifier.weight(1f))
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
             }
         }
     }
+    if (showSearch) HomeSearchSheet(
+        turfs = turfs,
+        selectedCity = selectedCity,
+        selectedSport = selectedSport,
+        onCityChange = { selectedCity = it },
+        onSportChange = { selectedSport = it },
+        onTurfOpen = { turf -> showSearch = false; nav.navigate(Routes.turf(turf.id)) },
+        onDismiss = { showSearch = false }
+    )
 }
 
 @Composable

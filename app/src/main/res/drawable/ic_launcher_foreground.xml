@@ -1,7 +1,12 @@
-<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="18%">
-    <bitmap
-        android:src="@drawable/brand_bmt_crest"
-        android:antialias="true"
-        android:filter="true"
-        android:gravity="fill" />
-</inset>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- BMT rendering of the new purple bookmyturf wordmark, inside the adaptive safe zone. -->
+    <path android:fillColor="#FFF8EA" android:fillType="evenOdd"
+        android:pathData="M18,36h14c8,0 12,4 12,10c0,4 -2,7 -5,8c5,2 7,5 7,10c0,7 -5,10 -14,10h-14zM26,43v8h6c3,0 5,-1 5,-4c0,-3 -2,-4 -5,-4zM26,58v9h7c4,0 5,-2 5,-5c0,-3 -1,-4 -5,-4z" />
+    <path android:fillColor="#FFF8EA"
+        android:pathData="M47,74v-38h8l7,18l7,-18h8v38h-8v-21l-7,17l-7,-17v21z" />
+    <path android:fillColor="#FFF8EA"
+        android:pathData="M78,36h15v8h-4v30h-8v-30h-3z" />
+    <path android:fillColor="#AE98FF" android:pathData="M25,81h62v2h-62z" />
+</vector>
