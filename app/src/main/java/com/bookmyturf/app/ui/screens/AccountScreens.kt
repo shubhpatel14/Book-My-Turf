@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,27 +32,86 @@ import com.bookmyturf.app.ui.theme.*
 
 @Composable
 fun MyBookingsScreen(vm: AppViewModel, nav: NavController) {
-    val bookings by vm.bookings.collectAsStateWithLifecycle(); var tab by remember { mutableIntStateOf(0) }
-    val statuses = listOf(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.CANCELLED); val list = bookings.filter { it.status == statuses[tab] }
-    UserScaffold(Routes.BOOKINGS, nav, "My bookings") { padding -> Column(Modifier.fillMaxSize().padding(padding)) {
-        TabRow(tab, containerColor = Ink, contentColor = Lime) { listOf("Upcoming", "Completed", "Cancelled").forEachIndexed { index, label -> Tab(tab == index, { tab = index }, text = { Text(label.uppercase(), style = MaterialTheme.typography.labelMedium) }) } }
-        if (list.isEmpty()) EmptyBookings { nav.navigate(Routes.EXPLORE) } else LazyColumn(contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { items(list, key = { it.id }) { BookingCard(it, vm) } }
-    } }
+    val bookings by vm.bookings.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val statuses = listOf(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.CANCELLED)
+    val labels = listOf("Upcoming", "Completed", "Cancelled")
+    val filtered = bookings.filter { it.status == statuses[tab] }
+    LazyColumn(
+        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        item { AccountHeading("Your games", "All your plans, in one place.") }
+        item {
+            Row(Modifier.fillMaxWidth().background(Steel, RoundedCornerShape(18.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                labels.forEachIndexed { index, label ->
+                    Surface(onClick = { tab = index }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp),
+                        color = if (tab == index) PulsePurple.copy(.3f) else Color.Transparent) {
+                        Text(label, Modifier.padding(vertical = 14.dp), textAlign = TextAlign.Center,
+                            color = if (tab == index) PulseLavender else TextMuted, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        item { Text("${filtered.size} ${labels[tab].lowercase()} bookings", color = TextMuted, style = MaterialTheme.typography.bodySmall) }
+        if (filtered.isEmpty()) item {
+            Surface(color = Charcoal, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Line)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Icon(Icons.Outlined.ConfirmationNumber, null, Modifier.size(44.dp), tint = PulseLavender)
+                    Text("No ${labels[tab].lowercase()} games", fontWeight = FontWeight.ExtraBold)
+                    Text("Your next game starts with finding an arena.", color = TextMuted, textAlign = TextAlign.Center)
+                    Button(onClick = { nav.navigate(Routes.EXPLORE) }, colors = ButtonDefaults.buttonColors(containerColor = PulsePurple, contentColor = Color.White), shape = RoundedCornerShape(14.dp)) { Text("Explore turfs") }
+                }
+            }
+        }
+        items(filtered, key = { it.id }) { BookingCard(it, vm) }
+    }
 }
 
 @Composable private fun BookingCard(booking: Booking, vm: AppViewModel) {
     var confirmCancel by remember { mutableStateOf(false) }
-    val statusColor = when (booking.status) { BookingStatus.CONFIRMED -> Lime; BookingStatus.COMPLETED -> Color(0xFF55B8FF); BookingStatus.CANCELLED -> Danger }
-    Card(colors = CardDefaults.cardColors(containerColor = Charcoal), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Line)) { Column(Modifier.padding(16.dp)) {
-        Row { Column(Modifier.weight(1f)) { Text(booking.turfName.uppercase(), style = MaterialTheme.typography.titleLarge); Text(booking.id, color = TextMuted, style = MaterialTheme.typography.labelMedium) }; StatusBadge(booking.status.name, statusColor) }
-        HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Line)
-        Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.CalendarMonth, null, Modifier.size(18.dp), tint = Lime); Text(" ${booking.date}  •  ${booking.time}", color = TextMuted, modifier = Modifier.weight(1f)); Text(formatInr(booking.amount), fontWeight = FontWeight.Bold) }
-        Spacer(Modifier.height(14.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton({ vm.showMessage("Booking ${booking.id} is shown above.") }, Modifier.weight(1f), shape = RoundedCornerShape(6.dp), border = BorderStroke(1.dp, Line)) { Text("VIEW DETAILS", style = MaterialTheme.typography.labelMedium) }; if (booking.status == BookingStatus.CONFIRMED) OutlinedButton({ confirmCancel = true }, Modifier.weight(1f), shape = RoundedCornerShape(6.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger), border = BorderStroke(1.dp, Danger.copy(.5f))) { Text("CANCEL", style = MaterialTheme.typography.labelMedium) } }
-    } }
-    if (confirmCancel) AlertDialog(onDismissRequest = { confirmCancel = false }, containerColor = Charcoal, title = { Text("Cancel booking?") }, text = { Text("Free cancellation is available until 6 hours before the slot. This demo will mark the booking cancelled.") }, confirmButton = { TextButton({ vm.cancelBooking(booking.id); confirmCancel = false }) { Text("CANCEL BOOKING", color = Danger) } }, dismissButton = { TextButton({ confirmCancel = false }) { Text("KEEP BOOKING") } })
+    var showDetails by remember { mutableStateOf(false) }
+    val statusColor = when (booking.status) { BookingStatus.CONFIRMED -> PulseLavender; BookingStatus.COMPLETED -> Color(0xFF55B8FF); BookingStatus.CANCELLED -> Danger }
+    Surface(color = Charcoal, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Line)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).background(PulsePurple.copy(.2f), RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.SportsSoccer, null, tint = PulseLavender)
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(booking.turfName, fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+                    Text(booking.id, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Surface(color = statusColor.copy(.12f), shape = RoundedCornerShape(50)) {
+                Text(booking.status.name.lowercase().replaceFirstChar { it.uppercase() }, Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = statusColor, style = MaterialTheme.typography.labelSmall)
+            }
+            HorizontalDivider(color = Line)
+            AccountInfo(Icons.Default.CalendarMonth, booking.date)
+            AccountInfo(Icons.Default.Schedule, booking.time)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${booking.durationHours} hour${if (booking.durationHours == 1) "" else "s"}", Modifier.weight(1f), color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                Text(formatInr(booking.amount), fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = { showDetails = true }, Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = PulsePurple.copy(.25f), contentColor = PulseLavender)) { Text("Details") }
+                if (booking.status == BookingStatus.CONFIRMED) OutlinedButton(onClick = { confirmCancel = true }, Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger), border = BorderStroke(1.dp, Danger.copy(.3f))) { Text("Cancel") }
+            }
+        }
+    }
+    if (showDetails) AlertDialog(
+        onDismissRequest = { showDetails = false }, containerColor = Charcoal, shape = RoundedCornerShape(24.dp),
+        title = { Text(booking.turfName, fontFamily = ManropeUi, fontWeight = FontWeight.Bold) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(booking.id, color = PulseLavender)
+            Text(booking.date); Text(booking.time)
+            Text("${booking.durationHours} hour(s) · ${formatInr(booking.amount)}")
+            Text("Status: ${booking.status.name.lowercase()}")
+        } }, confirmButton = { TextButton(onClick = { showDetails = false }) { Text("Done", color = PulseLavender) } }
+    )
+    if (confirmCancel) AlertDialog(onDismissRequest = { confirmCancel = false }, containerColor = Charcoal, shape = RoundedCornerShape(24.dp), title = { Text("Cancel booking?") }, text = { Text("Free cancellation is available until 6 hours before the slot. This demo will mark the booking cancelled.") }, confirmButton = { TextButton({ vm.cancelBooking(booking.id); confirmCancel = false }) { Text("Cancel booking", color = Danger) } }, dismissButton = { TextButton({ confirmCancel = false }) { Text("Keep booking", color = PulseLavender) } })
 }
-
-@Composable private fun EmptyBookings(action: () -> Unit) { Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(Icons.Outlined.ConfirmationNumber, null, Modifier.size(58.dp), tint = TextMuted); Spacer(Modifier.height(16.dp)); Text("NO BOOKINGS YET", style = MaterialTheme.typography.headlineMedium); Text("Your next game starts with finding an arena.", color = TextMuted, textAlign = TextAlign.Center); Spacer(Modifier.height(20.dp)); Button(action, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)) { Text("EXPLORE TURFS") } } }
 
 @Composable
 fun FavoritesScreen(vm: AppViewModel, nav: NavController) {
@@ -75,32 +135,100 @@ fun NotificationsScreen(vm: AppViewModel, nav: NavController) {
 
 @Composable
 fun ProfileScreen(vm: AppViewModel, nav: NavController, onLogout: () -> Unit) {
-    val p by vm.profile; var confirmLogout by remember { mutableStateOf(false) }
-    UserScaffold(Routes.PROFILE, nav, "Profile") { padding -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val p by vm.profile
+    val bookings by vm.bookings.collectAsStateWithLifecycle()
+    val turfs by vm.turfs.collectAsStateWithLifecycle()
+    var confirmLogout by remember { mutableStateOf(false) }
+    LazyColumn(
+        Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        item { AccountHeading("Your profile", "A little about you. Everything for your game.") }
         item { PlayerProfileHeader(p) }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) { ProfileStat("08", "GAMES", Modifier.weight(1f)); ProfileStat("05", "WINS", Modifier.weight(1f)); ProfileStat("4.8", "RATING", Modifier.weight(1f)) } }
-        item { Surface(color = Lime.copy(.08f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Lime.copy(.28f))) { Column(Modifier.padding(15.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.EmojiEvents, null, tint = Lime); Spacer(Modifier.width(9.dp)); Text("GAME PROFILE", color = Lime, style = MaterialTheme.typography.labelLarge) }; Spacer(Modifier.height(10.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Tag("Football"); Tag("Striker"); Tag("Evening") }; Spacer(Modifier.height(12.dp)); Text("72% TO LEVEL 13", color = TextMuted, style = MaterialTheme.typography.labelMedium); LinearProgressIndicator({ .72f }, Modifier.fillMaxWidth().padding(top = 6.dp).height(6.dp), color = Lime, trackColor = Line) } } }
-        item { ProfileGroup(listOf(ProfileItem("My Bookings", Icons.Outlined.ConfirmationNumber) { nav.navigate(Routes.BOOKINGS) }, ProfileItem("Favorite Turfs", Icons.Outlined.FavoriteBorder) { nav.navigate(Routes.FAVORITES) }, ProfileItem("Payment History", Icons.Outlined.ReceiptLong) { vm.showMessage("Demo payment history is available in bookings.") })) }
-        item { ProfileGroup(listOf(ProfileItem("Notifications", Icons.Outlined.Notifications) { nav.navigate(Routes.NOTIFICATIONS) }, ProfileItem("Help & Support", Icons.Outlined.HelpOutline) { vm.showMessage("Support chat is simulated in this demo.") }, ProfileItem("Terms & Conditions", Icons.Outlined.Description) {}, ProfileItem("Privacy Policy", Icons.Outlined.Shield) {})) }
-        item { OutlinedButton({ confirmLogout = true }, Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger), border = BorderStroke(1.dp, Danger.copy(.5f))) { Icon(Icons.Default.Logout, null); Spacer(Modifier.width(8.dp)); Text("LOGOUT") } }
-        item { Text("BOOKMYTURF • DEMO BUILD 1.0", Modifier.fillMaxWidth().padding(16.dp), color = TextMuted.copy(.6f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center) }
-    } }
-    if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, containerColor = Charcoal, title = { Text("Leave the game?") }, text = { Text("You can sign back in anytime.") }, confirmButton = { TextButton(onClick = onLogout) { Text("LOGOUT", color = Danger) } }, dismissButton = { TextButton({ confirmLogout = false }) { Text("STAY") } })
+        item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ProfileStat(bookings.count { it.status == BookingStatus.CONFIRMED }.toString(), "Upcoming", Modifier.weight(1f))
+            ProfileStat(bookings.count { it.status == BookingStatus.COMPLETED }.toString(), "Played", Modifier.weight(1f))
+            ProfileStat(turfs.count { it.isFavorite }.toString(), "Saved turfs", Modifier.weight(1f))
+        } }
+        item { Text("Your activity", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium) }
+        item { ProfileGroup(listOf(
+            ProfileItem("My bookings", Icons.Outlined.ConfirmationNumber) { nav.navigate(Routes.BOOKINGS) },
+            ProfileItem("Saved turfs", Icons.Outlined.FavoriteBorder) { nav.navigate(Routes.FAVORITES) },
+            ProfileItem("Payment history", Icons.Outlined.ReceiptLong) { vm.showMessage("Demo payment history is available in bookings.") }
+        )) }
+        item { Text("Support & preferences", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium) }
+        item { ProfileGroup(listOf(
+            ProfileItem("Notifications", Icons.Outlined.Notifications) { nav.navigate(Routes.NOTIFICATIONS) },
+            ProfileItem("Help & support", Icons.Outlined.HelpOutline) { vm.showMessage("Support chat is simulated in this demo.") },
+            ProfileItem("Terms & conditions", Icons.Outlined.Description) { vm.showMessage("Terms & conditions are not available in this demo.") },
+            ProfileItem("Privacy policy", Icons.Outlined.Shield) { vm.showMessage("Privacy policy is not available in this demo.") }
+        )) }
+        item { OutlinedButton(onClick = { confirmLogout = true }, Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Danger), border = BorderStroke(1.dp, Danger.copy(.3f))) {
+            Icon(Icons.Default.Logout, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Log out")
+        } }
+        item { Text("BookMyTurf · Demo", Modifier.fillMaxWidth(), color = TextMuted.copy(.6f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center) }
+    }
+    if (confirmLogout) AlertDialog(onDismissRequest = { confirmLogout = false }, containerColor = Charcoal, shape = RoundedCornerShape(24.dp), title = { Text("Log out?") }, text = { Text("You can sign back in anytime.") }, confirmButton = { TextButton(onClick = onLogout) { Text("Log out", color = Danger) } }, dismissButton = { TextButton({ confirmLogout = false }) { Text("Stay", color = PulseLavender) } })
 }
 
 @Composable private fun PlayerProfileHeader(p: UserProfile) {
-    Box(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(14.dp))) {
-        Image(painterResource(R.drawable.player_arjun), p.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.16f), Ink.copy(.96f)))))
-        Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) { Text(p.name.uppercase(), style = MaterialTheme.typography.headlineLarge); Spacer(Modifier.width(8.dp)); Icon(Icons.Default.Verified, null, tint = Lime) }
-            Text("STRIKER • LEVEL 12 • VADODARA", color = Lime, style = MaterialTheme.typography.labelMedium)
-            Text("${p.phone}  •  ${p.email}", color = Color.White.copy(.72f), style = MaterialTheme.typography.bodyMedium)
+    Surface(color = Charcoal, shape = RoundedCornerShape(24.dp), border = BorderStroke(1.dp, Line)) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(64.dp).background(Brush.linearGradient(listOf(PulsePurple, PulsePurpleDark)), RoundedCornerShape(22.dp)), contentAlignment = Alignment.Center) {
+                    Text(p.name.split(" ").filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase() }, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+                }
+                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                    Text(p.name, fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                    Text("Your player account", color = PulseLavender, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            HorizontalDivider(color = Line)
+            AccountInfo(Icons.Default.LocationOn, p.location)
+            AccountInfo(Icons.Default.Call, p.phone)
+            AccountInfo(Icons.Default.Email, p.email)
         }
     }
 }
 
-@Composable private fun ProfileStat(value: String, label: String, modifier: Modifier = Modifier) { Surface(modifier, color = Charcoal, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) { Column(Modifier.padding(vertical = 13.dp), horizontalAlignment = Alignment.CenterHorizontally) { Text(value, style = MaterialTheme.typography.headlineMedium, color = Lime); Text(label, color = TextMuted, style = MaterialTheme.typography.labelMedium) } } }
+@Composable private fun ProfileStat(value: String, label: String, modifier: Modifier = Modifier) {
+    Surface(modifier, color = Charcoal, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Line)) {
+        Column(Modifier.padding(vertical = 18.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall, color = PulseLavender)
+            Text(label, color = TextMuted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        }
+    }
+}
+
+@Composable private fun AccountHeading(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(title, fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+        Text(subtitle, color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable private fun AccountInfo(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, Modifier.size(18.dp), tint = PulseLavender)
+        Text(text, Modifier.padding(start = 10.dp), color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+    }
+}
 
 private data class ProfileItem(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val action: () -> Unit)
-@Composable private fun ProfileGroup(items: List<ProfileItem>) { Surface(color = Charcoal, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Line)) { Column { items.forEachIndexed { index, item -> Row(Modifier.fillMaxWidth().clickable(onClick = item.action).padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(item.icon, null, tint = Lime); Spacer(Modifier.width(14.dp)); Text(item.label, Modifier.weight(1f), fontWeight = FontWeight.Bold); Icon(Icons.Default.ChevronRight, null, tint = TextMuted) }; if (index < items.lastIndex) HorizontalDivider(color = Line) } } } }
+@Composable private fun ProfileGroup(items: List<ProfileItem>) {
+    Surface(color = Charcoal, shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, Line)) {
+        Column {
+            items.forEachIndexed { index, item ->
+                Row(Modifier.fillMaxWidth().clickable(onClick = item.action).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(38.dp).background(PulsePurple.copy(.16f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                        Icon(item.icon, null, Modifier.size(20.dp), tint = PulseLavender)
+                    }
+                    Text(item.label, Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                    Icon(Icons.Default.ChevronRight, null, tint = TextMuted, modifier = Modifier.size(20.dp))
+                }
+                if (index < items.lastIndex) HorizontalDivider(Modifier.padding(start = 64.dp, end = 16.dp), color = Line)
+            }
+        }
+    }
+}

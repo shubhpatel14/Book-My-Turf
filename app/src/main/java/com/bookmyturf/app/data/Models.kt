@@ -23,7 +23,9 @@ data class Turf(
     val isIndoor: Boolean = false,
     val isFavorite: Boolean = false,
     val active: Boolean = true,
-    val visualSeed: Int = 0
+    val visualSeed: Int = 0,
+    // Add up to four R.drawable photo resources for the Explore carousel.
+    val photoResIds: List<Int> = emptyList()
 )
 
 @Immutable

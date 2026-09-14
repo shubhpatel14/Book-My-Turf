@@ -612,36 +612,3 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
         onDismiss = { showSearch = false }
     )
 }
-
-@Composable
-fun ExploreScreen(vm: AppViewModel, nav: NavController) {
-    val turfs by vm.turfs.collectAsStateWithLifecycle()
-    var query by remember { mutableStateOf("") }; var sport by remember { mutableStateOf<Sport?>(null) }; var indoor by remember { mutableStateOf(false) }; var sort by remember { mutableStateOf("Nearest") }; var showFilters by remember { mutableStateOf(false) }
-    val filtered = remember(turfs, query, sport, indoor, sort) {
-        turfs.filter { t -> (query.isBlank() || t.name.contains(query, true) || t.city.contains(query, true) || t.area.contains(query, true) || t.sports.any { it.label.contains(query, true) }) && (sport == null || sport in t.sports) && (!indoor || t.isIndoor) }
-            .let { list -> when (sort) { "Cheapest" -> list.sortedBy { it.pricePerHour }; "Highest Rated" -> list.sortedByDescending { it.rating }; else -> list.sortedBy { it.distanceKm } } }
-    }
-    UserScaffold(Routes.EXPLORE, nav, "Explore") { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text("Turf, location or sport") }, leadingIcon = { Icon(Icons.Default.Search, null) }, trailingIcon = { IconButton(onClick = { showFilters = true }) { Icon(Icons.Default.Tune, "Filters", tint = Lime) } }, shape = RoundedCornerShape(8.dp), singleLine = true)
-            LazyRow(Modifier.padding(vertical = 12.dp), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { Tag("All", sport == null) { sport = null } }; items(Sport.entries) { s -> Tag(s.label, sport == s) { sport = if (sport == s) null else s } }
-            }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("${filtered.size} ARENAS", color = TextMuted, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.weight(1f)); Text("$sort ", color = Lime, style = MaterialTheme.typography.labelMedium); Icon(Icons.Default.SwapVert, null, tint = Lime, modifier = Modifier.size(16.dp).clickable { sort = when (sort) { "Nearest" -> "Cheapest"; "Cheapest" -> "Highest Rated"; else -> "Nearest" } }) }
-            if (filtered.isEmpty()) {
-                Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(Icons.Default.SearchOff, null, Modifier.size(54.dp), tint = TextMuted); Spacer(Modifier.height(16.dp)); Text("NO TURFS FOUND", style = MaterialTheme.typography.headlineMedium); Text("Try changing your search or filters.", color = TextMuted); Spacer(Modifier.height(18.dp)); OutlinedButton(onClick = { query = ""; sport = null; indoor = false }) { Text("CLEAR FILTERS") } }
-            } else LazyColumn(contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(filtered, key = { it.id }) { turf -> TurfCard(turf, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) }) }
-            }
-        }
-    }
-    if (showFilters) ModalBottomSheet(onDismissRequest = { showFilters = false }, containerColor = Charcoal) {
-        Column(Modifier.padding(20.dp).navigationBarsPadding()) {
-            SectionTitle("Filters"); Text("VENUE TYPE", color = TextMuted, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Tag("Indoor", indoor) { indoor = !indoor }; Tag("Outdoor", !indoor) { indoor = false } }
-            Spacer(Modifier.height(20.dp)); Text("SORT BY", color = TextMuted, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.height(10.dp))
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Nearest", "Cheapest", "Highest Rated").forEach { Tag(it, sort == it) { sort = it } } }
-            Spacer(Modifier.height(24.dp)); PrimaryButton("Show ${filtered.size} Turfs", { showFilters = false }); Spacer(Modifier.height(14.dp))
-        }
-    }
-}
