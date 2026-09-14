@@ -1,57 +1,98 @@
 package com.bookmyturf.app.data
 
-import kotlinx.coroutines.delay
+import java.io.*
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-class DemoBookMyTurfRepository : BookMyTurfRepository {
-    private val _turfs = MutableStateFlow(seedTurfs())
-    override val turfs = _turfs.asStateFlow()
+private data class StoreSnapshot(
+    val turfs: List<Turf>, val bookings: List<Booking>, val notifications: List<AppNotification>,
+    val operations: OperationsState = OperationsState()
+) : Serializable
 
-    private val _bookings = MutableStateFlow(seedBookings())
-    override val bookings = _bookings.asStateFlow()
+/** One atomic, persistent source for all screens. No network backend is configured. */
+class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurfRepository {
+    private val initial = if (storeFile?.exists() == true)
+        ObjectInputStream(storeFile.inputStream().buffered()).use { it.readObject() as StoreSnapshot }
+        else StoreSnapshot(seedTurfs(), seedBookings(), seedNotifications())
+    private val state = MutableStateFlow(initial)
+    private val mutex = Mutex()
+    override val turfs = state.map { it.turfs }.distinctUntilChanged()
+    override val bookings = state.map { it.bookings }.distinctUntilChanged()
+    override val notifications = state.map { it.notifications }.distinctUntilChanged()
+    override val operations = state.map { it.operations }.distinctUntilChanged()
 
-    private val _notifications = MutableStateFlow(seedNotifications())
-    override val notifications = _notifications.asStateFlow()
-
-    override suspend fun toggleFavorite(turfId: String) {
-        delay(120)
-        _turfs.update { list -> list.map { if (it.id == turfId) it.copy(isFavorite = !it.isFavorite) else it } }
-    }
-
-    override suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double): Booking {
-        delay(650)
-        val booking = Booking(
-            id = "BMT-20260910-${(4821 + _bookings.value.size)}",
-            turfId = turf.id, turfName = turf.name, date = date, time = time,
-            durationHours = duration, amount = total, status = BookingStatus.CONFIRMED
-        )
-        _bookings.update { listOf(booking) + it }
-        _notifications.update {
-            listOf(AppNotification("n-new", "Booking confirmed", "${turf.name} is ready for your game.", "Just now", true, "booking")) + it
+    private suspend fun mutate(change: (StoreSnapshot) -> StoreSnapshot) = mutex.withLock {
+        val next = change(state.value)
+        withContext(Dispatchers.IO) {
+            storeFile?.let { target ->
+                target.parentFile?.mkdirs()
+                val temporary = File(target.parentFile, target.name + ".pending")
+                FileOutputStream(temporary).use { stream ->
+                    val output = ObjectOutputStream(stream)
+                    output.writeObject(next)
+                    output.flush()
+                    stream.fd.sync()
+                }
+                Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            }
         }
-        return booking
+        state.value = next
     }
 
+    override suspend fun updateOperations(change: (OperationsState) -> OperationsState) {
+        mutate { it.copy(operations = change(it.operations)) }
+    }
+    override suspend fun markNotificationsRead() {
+        mutate { it.copy(notifications = it.notifications.map { n -> n.copy(unread = false) }) }
+    }
+    override suspend fun toggleFavorite(turfId: String) {
+        mutate { it.copy(turfs = it.turfs.map { turf -> if (turf.id == turfId) turf.copy(isFavorite = !turf.isFavorite) else turf }) }
+    }
+    override suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String): Booking {
+        var created: Booking? = null
+        mutate { current ->
+            val latest = current.turfs.firstOrNull { it.id == turf.id } ?: error("This venue is no longer available.")
+            require(latest.active && duration > 0) { "Select an active venue and available slots." }
+            val available = venueSlots(latest, date, current.operations, current.bookings)
+            val start = available.indexOfFirst { it.time == bookingStart(time).format(slotTimeFormat) }
+            require(start >= 0 && start + duration <= available.size) { "These hours are outside the venue schedule." }
+            val selected = available.subList(start, start + duration)
+            require(selected.all { it.state == SlotState.AVAILABLE }) { "A selected slot is no longer available. Choose again." }
+            val expected = (selected.sumOf { it.price } + 20.0) * 1.18
+            require(kotlin.math.abs(total - expected) < .02) { "Pricing changed. Please select your slots again." }
+            val booking = Booking("BMT-" + UUID.randomUUID().toString().take(8).uppercase(), latest.id, latest.name, date, time, duration, expected, BookingStatus.CONFIRMED, customer)
+            created = booking
+            current.copy(bookings = listOf(booking) + current.bookings,
+                notifications = listOf(AppNotification(UUID.randomUUID().toString(), "Booking confirmed", "${latest.name} · $date · $time", "Just now", true, "booking")) + current.notifications)
+        }
+        return checkNotNull(created)
+    }
     override suspend fun cancelBooking(bookingId: String) {
-        delay(300)
-        _bookings.update { list -> list.map { if (it.id == bookingId) it.copy(status = BookingStatus.CANCELLED) else it } }
+        mutate { it.copy(bookings = it.bookings.map { b -> if (b.id == bookingId && b.status == BookingStatus.CONFIRMED) b.copy(status = BookingStatus.CANCELLED) else b }) }
     }
-
     override suspend fun setTurfActive(turfId: String, active: Boolean) {
-        _turfs.update { list -> list.map { if (it.id == turfId) it.copy(active = active) else it } }
+        mutate { it.copy(turfs = it.turfs.map { t -> if (t.id == turfId) t.copy(active = active) else t }) }
     }
-
     override suspend fun deleteTurf(turfId: String) {
-        _turfs.update { list -> list.filterNot { it.id == turfId } }
+        mutate { it.copy(turfs = it.turfs.filterNot { t -> t.id == turfId }) }
     }
-
     override suspend fun upsertTurf(turf: Turf) {
-        delay(150)
-        _turfs.update { list -> if (list.any { it.id == turf.id }) list.map { if (it.id == turf.id) turf else it } else listOf(turf) + list }
+        require(turf.name.isNotBlank() && turf.city.isNotBlank() && turf.area.isNotBlank()) { "Name, area and city are required." }
+        require(turf.pricePerHour > 0 && turf.sports.isNotEmpty() && turf.openingHour in 0..22 && turf.closingHour in (turf.openingHour + 1)..23) { "Check price, sports and opening hours." }
+        require(turf.rating in 0.0..5.0 && turf.distanceKm >= 0 && turf.photoUris.size <= 4)
+        mutate { current ->
+            val saved = turf.copy(isFavorite = current.turfs.firstOrNull { it.id == turf.id }?.isFavorite ?: turf.isFavorite)
+            current.copy(turfs = if (current.turfs.any { it.id == turf.id }) current.turfs.map { if (it.id == turf.id) saved else it } else listOf(saved) + current.turfs)
+        }
     }
-
     companion object {
         fun slots() = listOf(
             TurfSlot("06:00 AM", 600, SlotState.AVAILABLE), TurfSlot("07:00 AM", 600, SlotState.AVAILABLE),

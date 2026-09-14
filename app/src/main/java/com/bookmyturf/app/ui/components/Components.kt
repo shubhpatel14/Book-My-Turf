@@ -125,8 +125,8 @@ fun AnimatedBrandCrest(modifier: Modifier = Modifier) {
 @Composable
 fun SectionTitle(title: String, action: String? = null, onAction: () -> Unit = {}) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title.uppercase(), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-        if (action != null) TextButton(onClick = onAction) { Text(action.uppercase(), color = Lime, style = MaterialTheme.typography.labelMedium) }
+        Text(if (LocalAdminStyle.current) title.uppercase() else title, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+        if (action != null) TextButton(onClick = onAction) { Text(action, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -139,11 +139,11 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
         onClick = onClick, enabled = enabled,
         modifier = modifier.fillMaxWidth().height(54.dp).scale(buttonScale),
         interactionSource = interaction,
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink, disabledContainerColor = Line, disabledContentColor = TextMuted)
+        shape = RoundedCornerShape(if (LocalAdminStyle.current) 8.dp else 16.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = if (LocalAdminStyle.current) Lime else PulsePurple, contentColor = if (LocalAdminStyle.current) Ink else Color.White, disabledContainerColor = Line, disabledContentColor = TextMuted)
     ) {
         if (icon != null) { Icon(icon, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
-        Text(text.uppercase(), style = MaterialTheme.typography.labelLarge)
+        Text(if (LocalAdminStyle.current) text.uppercase() else text, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -181,7 +181,7 @@ fun TurfVisual(seed: Int, modifier: Modifier = Modifier, label: String? = null) 
 fun TurfCard(turf: Turf, onOpen: () -> Unit, onFavorite: () -> Unit, modifier: Modifier = Modifier) {
     Card(modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Charcoal), border = BorderStroke(1.dp, Line)) {
         Box {
-            TurfVisual(turf.visualSeed, Modifier.fillMaxWidth().height(176.dp), turf.sports.joinToString(" • ") { it.label })
+            VenuePhoto(turf, Modifier.fillMaxWidth().height(176.dp))
             Surface(Modifier.align(Alignment.TopStart).padding(10.dp), color = Ink.copy(.84f), shape = RoundedCornerShape(5.dp), border = BorderStroke(1.dp, Lime.copy(.36f))) {
                 Row(Modifier.padding(horizontal = 9.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(6.dp).background(Lime, CircleShape)); Spacer(Modifier.width(6.dp))
@@ -223,10 +223,10 @@ fun TurfCard(turf: Turf, onOpen: () -> Unit, onFavorite: () -> Unit, modifier: M
 
 @Composable
 fun Tag(text: String, selected: Boolean = false, onClick: (() -> Unit)? = null) {
-    val bg by animateColorAsState(if (selected) Lime else Steel, label = "tag")
+    val bg by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else Steel, label = "tag")
     val fg = if (selected) Ink else TextPrimary
     Surface(
-        color = bg, contentColor = fg, shape = RoundedCornerShape(6.dp),
+        color = bg, contentColor = fg, shape = RoundedCornerShape(if (LocalAdminStyle.current) 6.dp else 16.dp),
         border = if (selected) null else BorderStroke(1.dp, Line),
         modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     ) { Text(text.uppercase(), Modifier.padding(horizontal = 12.dp, vertical = 9.dp), style = MaterialTheme.typography.labelMedium) }

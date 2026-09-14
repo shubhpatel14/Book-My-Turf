@@ -119,7 +119,7 @@ fun BookMyTurfRoot() {
             ) {
             composable(Routes.SPLASH) { SplashScreen { nav.navigate(Routes.ONBOARDING) { popUpTo(Routes.SPLASH) { inclusive = true } } } }
             composable(Routes.ONBOARDING) { OnboardingScreen(onDone = { nav.navigate(Routes.LOGIN) { popUpTo(Routes.ONBOARDING) { inclusive = true } } }) }
-            composable(Routes.LOGIN) { LoginScreen(vm, onUser = { nav.navigate(Routes.USER) { popUpTo(Routes.LOGIN) { inclusive = true } } }, onAdmin = { nav.navigate(Routes.ADMIN) { popUpTo(Routes.LOGIN) { inclusive = true } } }, onRegister = { nav.navigate(Routes.REGISTER) }) }
+            composable(Routes.LOGIN) { LoginScreen(vm, onUser = { nav.navigate(Routes.USER) { popUpTo(Routes.LOGIN) { inclusive = true } } }, onAdmin = { nav.navigate(Routes.ADMIN) { popUpTo(Routes.LOGIN) { inclusive = true } } }) }
             composable(Routes.REGISTER) { RegistrationScreen(vm, onBack = nav::popBackStack, onComplete = { nav.navigate(Routes.USER) { popUpTo(Routes.LOGIN) { inclusive = true } } }) }
             composable(Routes.USER) { UserHomeScreen(vm, nav) }
             composable(Routes.EXPLORE) { ExploreScreen(vm, nav) }
@@ -131,8 +131,8 @@ fun BookMyTurfRoot() {
             composable(Routes.BOOKINGS) { MyBookingsScreen(vm, nav) }
             composable(Routes.FAVORITES) { FavoritesScreen(vm, nav) }
             composable(Routes.NOTIFICATIONS) { NotificationsScreen(vm, nav) }
-            composable(Routes.PROFILE) { ProfileScreen(vm, nav, onLogout = { nav.navigate(Routes.LOGIN) { popUpTo(0) } }) }
-            composable(Routes.ADMIN) { AdminDashboardScreen(vm, nav, onLogout = { nav.navigate(Routes.LOGIN) { popUpTo(0) } }) }
+            composable(Routes.PROFILE) { ProfileScreen(vm, nav, onLogout = { vm.logout(); nav.navigate(Routes.LOGIN) { popUpTo(0) } }) }
+            composable(Routes.ADMIN) { com.bookmyturf.app.ui.theme.AdminAppearance { AdminDashboardScreen(vm, nav, onLogout = { vm.logout(); nav.navigate(Routes.LOGIN) { popUpTo(0) } }) } }
             }
             if (currentRoute in mainTabs) {
                 UserBottomBar(currentRoute!!, nav, Modifier.align(Alignment.BottomCenter))

@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.bookmyturf.app.data.Sport
 import com.bookmyturf.app.data.Turf
 import com.bookmyturf.app.ui.components.SportIcon
-import com.bookmyturf.app.ui.components.TurfVisual
+import com.bookmyturf.app.ui.components.VenuePhoto
 import com.bookmyturf.app.ui.theme.*
 
 @Composable
@@ -123,7 +123,7 @@ fun HomeSearchSheet(
                             border = BorderStroke(1.dp, Line)
                         ) {
                             Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                TurfVisual(turf.visualSeed, Modifier.size(82.dp, 66.dp).clip(RoundedCornerShape(11.dp)))
+                                VenuePhoto(turf, Modifier.size(82.dp, 66.dp).clip(RoundedCornerShape(11.dp)))
                                 Column(Modifier.weight(1f).padding(horizontal = 11.dp)) {
                                     Text(turf.name, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text("${turf.area}, ${turf.city} • ${turf.distanceKm} km", color = TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)

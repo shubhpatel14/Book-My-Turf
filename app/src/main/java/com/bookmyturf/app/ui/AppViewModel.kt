@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 @Immutable
 data class BookingDraft(
     val turf: Turf? = null,
-    val date: String = "10 September 2026",
+    val date: String = java.time.LocalDate.now().format(bookingDateFormat),
     val slots: List<TurfSlot> = emptyList(),
     val turfFee: Double = 800.0,
     val platformFee: Double = 20.0,
@@ -35,8 +35,9 @@ enum class AuthRole { USER, ADMIN }
 enum class PaymentState { IDLE, PROCESSING, SUCCESS, FAILED }
 
 class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
-    val turfs: StateFlow<List<Turf>> = repository.turfs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val turfs: StateFlow<List<Turf>> = repository.turfs.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val bookings: StateFlow<List<Booking>> = repository.bookings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val operations = repository.operations.stateIn(viewModelScope, SharingStarted.Eagerly, FirebaseBookMyTurfRepository.emptyOperations())
     val notifications: StateFlow<List<AppNotification>> = repository.notifications.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     var profile = androidx.compose.runtime.mutableStateOf(UserProfile())
@@ -52,11 +53,46 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
     var snackbar = androidx.compose.runtime.mutableStateOf<String?>(null)
         private set
 
-    fun login(identifier: String, password: String): Boolean {
-        val admin = identifier.trim().equals("admin@bookmyturf.demo", true) && password == "Admin@12345"
-        val user = identifier.isNotBlank() && password.length >= 6
-        authRole.value = when { admin -> AuthRole.ADMIN; user -> AuthRole.USER; else -> null }
-        return authRole.value != null
+    var authBusy = androidx.compose.runtime.mutableStateOf(false)
+        private set
+    init {
+        if (repository is FirebaseBookMyTurfRepository) viewModelScope.launch {
+            repository.errors.collect { showMessage(it) }
+        }
+    }
+    private fun acceptSession(session: CloudSession) {
+        profile.value = session.profile
+        authRole.value = if (session.admin) AuthRole.ADMIN else AuthRole.USER
+    }
+    fun login(identifier: String, password: String, onComplete: (String?) -> Unit) {
+        if (authBusy.value) return
+        authBusy.value = true
+        viewModelScope.launch {
+            runCatching {
+                val cloud = repository as? FirebaseBookMyTurfRepository ?: error("Cloud sign-in is not configured.")
+                cloud.signIn(identifier, password)
+            }.onSuccess { acceptSession(it); onComplete(null) }
+                .onFailure { onComplete(it.message ?: "Sign-in failed.") }
+            authBusy.value = false
+        }
+    }
+
+    fun loginWithGoogle(idToken: String, onComplete: (String?) -> Unit) {
+        if (authBusy.value) return
+        authBusy.value = true
+        viewModelScope.launch {
+            runCatching { (repository as FirebaseBookMyTurfRepository).signInWithGoogle(idToken) }
+                .onSuccess { acceptSession(it); onComplete(null) }
+                .onFailure { onComplete(it.message ?: "Google sign-in failed.") }
+            authBusy.value = false
+        }
+    }
+    fun resetPassword(email: String, onComplete: (String?) -> Unit) = viewModelScope.launch {
+        runCatching {
+            require(android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) { "Enter your email address first." }
+            (repository as FirebaseBookMyTurfRepository).resetPassword(email)
+        }.onSuccess { onComplete(null); showMessage("Password reset email requested. Check your inbox.") }
+            .onFailure { onComplete(it.message ?: "Could not request a reset email.") }
     }
 
     fun beginBooking(turf: Turf) {
@@ -66,7 +102,7 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
     }
 
     fun setBookingDate(date: String) {
-        bookingDraft.value = bookingDraft.value.copy(date = date, slots = emptyList())
+        bookingDraft.value = bookingDraft.value.copy(date = date, slots = emptyList(), turfFee = 0.0, gst = 3.6)
     }
 
     fun toggleSlot(slot: TurfSlot, allSlots: List<TurfSlot>): Boolean {
@@ -91,18 +127,31 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
     }
 
     fun processDemoPayment(onSuccess: () -> Unit) {
+        if (!com.bookmyturf.app.data.CloudFeatures.bookingsEnabled) {
+            showMessage(com.bookmyturf.app.data.CloudFeatures.bookingUnavailable)
+            return
+        }
+        if (paymentState.value == PaymentState.PROCESSING) return
         val draft = bookingDraft.value
         val turf = draft.turf ?: return
+        if (draft.slots.isEmpty()) { showMessage("Choose at least one available slot."); return }
         paymentState.value = PaymentState.PROCESSING
         viewModelScope.launch {
             delay(1500)
-            lastBooking.value = repository.createBooking(turf, draft.date, draft.timeLabel, draft.slots.size.coerceAtLeast(1), draft.total)
-            paymentState.value = PaymentState.SUCCESS
-            onSuccess()
+            runCatching {
+                repository.createBooking(turf, draft.date, draft.timeLabel, draft.slots.size, draft.total, profile.value.name)
+            }.onSuccess {
+                lastBooking.value = it
+                paymentState.value = PaymentState.SUCCESS
+                onSuccess()
+            }.onFailure {
+                paymentState.value = PaymentState.FAILED
+                showMessage(it.message ?: "Could not complete the booking. Try again.")
+            }
         }
     }
 
-    fun register(name: String, phone: String, email: String, password: String, confirm: String): String? {
+    fun register(name: String, phone: String, email: String, password: String, confirm: String, onComplete: (String?) -> Unit) {
         val error = when {
             name.trim().length < 3 -> "Enter your full name"
             !phone.filter(Char::isDigit).let { it.length == 10 || it.length == 12 } -> "Enter a valid Indian mobile number"
@@ -111,18 +160,41 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
             password != confirm -> "Passwords do not match"
             else -> null
         }
-        if (error == null) {
-            profile.value = UserProfile(name.trim(), phone.trim(), email.trim(), "Vadodara, Gujarat")
-            authRole.value = AuthRole.USER
+        if (error != null) { onComplete(error); return }
+        if (authBusy.value) return
+        authBusy.value = true
+        viewModelScope.launch {
+            runCatching { (repository as FirebaseBookMyTurfRepository).register(UserProfile(name.trim(), phone.trim(), email.trim(), ""), password) }
+                .onSuccess { acceptSession(it); onComplete(null) }
+                .onFailure { onComplete(it.message ?: "Account creation failed.") }
+            authBusy.value = false
         }
-        return error
     }
 
-    fun toggleFavorite(id: String) = viewModelScope.launch { repository.toggleFavorite(id) }
-    fun cancelBooking(id: String) = viewModelScope.launch { repository.cancelBooking(id); snackbar.value = "Booking cancelled in demo mode." }
-    fun setTurfActive(id: String, active: Boolean) = viewModelScope.launch { repository.setTurfActive(id, active) }
-    fun deleteTurf(id: String) = viewModelScope.launch { repository.deleteTurf(id); snackbar.value = "Turf removed from demo data." }
-    fun upsertTurf(turf: Turf) = viewModelScope.launch { repository.upsertTurf(turf); snackbar.value = "Turf saved to demo data." }
+    private fun write(message: String? = null, onSaved: () -> Unit = {}, action: suspend () -> Unit) = viewModelScope.launch {
+        runCatching { action() }.onSuccess { message?.let(::showMessage); onSaved() }
+            .onFailure { showMessage(it.message ?: "Could not save changes. Please try again.") }
+    }
+    fun toggleFavorite(id: String) = write { repository.toggleFavorite(id) }
+    fun cancelBooking(id: String) = write("Booking cancelled.") { repository.cancelBooking(id) }
+    fun setTurfActive(id: String, active: Boolean) = write { requireAdmin(); repository.setTurfActive(id, active) }
+    fun deleteTurf(id: String) = write("Turf removed. Existing booking records are retained.") { requireAdmin(); repository.deleteTurf(id) }
+    fun upsertTurf(turf: Turf, onSaved: () -> Unit = {}) = write("Turf saved.", onSaved) { requireAdmin(); repository.upsertTurf(turf) }
+    private fun requireAdmin() { check(authRole.value == AuthRole.ADMIN) { "Sign in as admin to make changes." } }
+    fun updateOperations(change: (OperationsState) -> OperationsState) = write("Changes saved.") {
+        requireAdmin()
+        repository.updateOperations(change)
+    }
+    fun saveSlots(turfId: String, date: String, slots: List<TurfSlot>, onSaved: () -> Unit) = write("Availability saved.", onSaved) {
+        requireAdmin()
+        repository.updateOperations { it.copy(slotOverrides = it.slotOverrides + ("$turfId|$date" to slots)) }
+    }
+    fun markNotificationsRead() = write { repository.markNotificationsRead() }
+    fun saveProfile(value: UserProfile) = write("Profile saved.") {
+        (repository as FirebaseBookMyTurfRepository).saveProfile(value)
+        profile.value = value
+    }
+    fun logout() { (repository as? FirebaseBookMyTurfRepository)?.signOut(); authRole.value = null; profile.value = UserProfile("", "", "", ""); bookingDraft.value = BookingDraft(); lastBooking.value = null }
     fun showMessage(message: String) { snackbar.value = message }
     fun clearSnackbar() { snackbar.value = null }
 }

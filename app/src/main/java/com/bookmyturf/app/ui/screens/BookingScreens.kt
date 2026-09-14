@@ -43,8 +43,9 @@ import java.util.Locale
 
 @Composable
 fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
+    val operations by vm.operations.collectAsStateWithLifecycle()
     val turfs by vm.turfs.collectAsStateWithLifecycle(); val turf = turfs.firstOrNull { it.id == id }
-    if (turf == null) { ErrorState("TURF NOT FOUND", "This arena may no longer be available.") { nav.popBackStack() }; return }
+    if (turf == null || !turf.active) { ErrorState("TURF NOT FOUND", "This arena may no longer be available.") { nav.popBackStack() }; return }
     Scaffold(
         topBar = { BookingTopBar("The arena", nav, true) },
         bottomBar = {
@@ -87,7 +88,7 @@ fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
             item { BookingPanel {
                 BookingSectionTitle("Opening hours")
                 Text("Monday – Sunday", fontWeight = FontWeight.Bold)
-                Text("6:00 AM – 11:00 PM", color = PulseLavender)
+                Text("${java.time.LocalTime.of(turf.openingHour, 0).format(slotTimeFormat)} – ${java.time.LocalTime.of(turf.closingHour, 0).format(slotTimeFormat)}", color = PulseLavender)
             } }
             item { BookingPanel {
                 BookingSectionTitle("Find the arena")
@@ -95,10 +96,11 @@ fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
                 Spacer(Modifier.height(10.dp))
                 MapPlaceholder(turf.area)
             } }
-            item { BookingSectionTitle("From the players")
-                ReviewCard("Rohan Mehta", 5, "Top-quality turf and bright floodlights. The staff had everything ready on time.")
-                Spacer(Modifier.height(10.dp))
-                ReviewCard("Kabir Shah", 4, "Great surface for box cricket. Parking gets busy after 7 PM.")
+            item {
+                BookingSectionTitle("From the players")
+                val reviews = operations.reviews.filter { it.turfId == turf.id && it.published }
+                if (reviews.isEmpty()) Text("No reviews yet.", color = TextMuted)
+                reviews.forEach { review -> ReviewCard(review.author, review.stars, review.text); Spacer(Modifier.height(10.dp)) }
             }
         }
     }
@@ -111,7 +113,7 @@ fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
     Box(Modifier.fillMaxWidth().height(275.dp)) {
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
             Box(Modifier.fillMaxSize()) {
-                Image(painterResource(photos[page]), "${turf.name}, photo ${page + 1} of 4", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                VenuePhoto(turf, Modifier.fillMaxSize(), page)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.1f), Ink.copy(.78f)))))
             }
         }
@@ -147,14 +149,29 @@ fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
 @Composable
 fun SlotBookingScreen(vm: AppViewModel, id: String, nav: NavController) {
     val turfs by vm.turfs.collectAsStateWithLifecycle(); val turf = turfs.firstOrNull { it.id == id }
-    if (turf == null) { ErrorState("SLOT UNAVAILABLE", "This turf is currently unavailable.") { nav.popBackStack() }; return }
+    if (turf == null || !turf.active) { ErrorState("SLOT UNAVAILABLE", "This turf is currently unavailable.") { nav.popBackStack() }; return }
     LaunchedEffect(turf.id) { if (vm.bookingDraft.value.turf?.id != turf.id) vm.beginBooking(turf) }
-    val slots = remember { DemoBookMyTurfRepository.slots() }; val draft by vm.bookingDraft
-    val dates = listOf("10 September 2026" to "TODAY\n10 SEP", "11 September 2026" to "TOMORROW\n11 SEP", "12 September 2026" to "SAT\n12 SEP", "13 September 2026" to "SUN\n13 SEP")
+    val draft by vm.bookingDraft
+    val operations by vm.operations.collectAsStateWithLifecycle()
+    val bookings by vm.bookings.collectAsStateWithLifecycle()
+    val slots = remember(turf, draft.date, operations, bookings) { venueSlots(turf, draft.date, operations, bookings) }
+    LaunchedEffect(slots) {
+        if (draft.slots.any { selected -> slots.none { it.time == selected.time && it.price == selected.price && it.state == SlotState.AVAILABLE } }) {
+            vm.setBookingDate(draft.date)
+            vm.showMessage("Availability changed. Please choose your slots again.")
+        }
+    }
+    val dates = (0L..6L).map { offset ->
+        val day = java.time.LocalDate.now().plusDays(offset)
+        day.format(bookingDateFormat) to (day.format(java.time.format.DateTimeFormatter.ofPattern("EEE", Locale.US)) + "\n" + day.format(java.time.format.DateTimeFormatter.ofPattern("d MMM", Locale.US)))
+    }
     Scaffold(topBar = { BookingTopBar("Pick your slot", nav, true) }, bottomBar = {
         Surface(color = Charcoal, border = BorderStroke(1.dp, Line)) { Column(Modifier.navigationBarsPadding().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("${draft.slots.size} HOUR${if (draft.slots.size == 1) "" else "S"}", color = TextMuted, style = MaterialTheme.typography.labelMedium); Text(if (draft.slots.isEmpty()) "Select a slot" else formatInr(draft.turfFee), fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = if (draft.slots.isEmpty()) TextPrimary else PulseLavender) }; Text(draft.timeLabel, color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
-            Spacer(Modifier.height(12.dp)); BookingButton("Review booking", { nav.navigate(Routes.SUMMARY) }, enabled = draft.slots.isNotEmpty())
+            if (!com.bookmyturf.app.data.CloudFeatures.bookingsEnabled) {
+                Text(com.bookmyturf.app.data.CloudFeatures.bookingUnavailable, color = TextMuted)
+            }
+            Spacer(Modifier.height(12.dp)); BookingButton("Review booking", { nav.navigate(Routes.SUMMARY) }, enabled = draft.slots.isNotEmpty() && com.bookmyturf.app.data.CloudFeatures.bookingsEnabled)
         } }
     }, containerColor = Ink) { padding ->
         LazyColumn(Modifier.padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 24.dp)) {

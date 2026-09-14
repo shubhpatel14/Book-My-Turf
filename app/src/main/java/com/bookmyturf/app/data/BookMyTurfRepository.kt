@@ -6,8 +6,11 @@ interface BookMyTurfRepository {
     val turfs: Flow<List<Turf>>
     val bookings: Flow<List<Booking>>
     val notifications: Flow<List<AppNotification>>
+    val operations: Flow<OperationsState>
+    suspend fun updateOperations(change: (OperationsState) -> OperationsState)
+    suspend fun markNotificationsRead()
     suspend fun toggleFavorite(turfId: String)
-    suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double): Booking
+    suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String = "Arjun Patel"): Booking
     suspend fun cancelBooking(bookingId: String)
     suspend fun setTurfActive(turfId: String, active: Boolean)
     suspend fun deleteTurf(turfId: String)

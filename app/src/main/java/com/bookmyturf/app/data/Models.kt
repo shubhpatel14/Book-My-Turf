@@ -25,13 +25,16 @@ data class Turf(
     val active: Boolean = true,
     val visualSeed: Int = 0,
     // Add up to four R.drawable photo resources for the Explore carousel.
-    val photoResIds: List<Int> = emptyList()
-)
+    val photoResIds: List<Int> = emptyList(),
+    val photoUris: List<String> = emptyList(),
+    val openingHour: Int = 6,
+    val closingHour: Int = 23
+) : java.io.Serializable
 
 @Immutable
 enum class SlotState { AVAILABLE, BOOKED, BLOCKED }
 @Immutable
-data class TurfSlot(val time: String, val price: Int, val state: SlotState)
+data class TurfSlot(val time: String, val price: Int, val state: SlotState) : java.io.Serializable
 
 @Immutable
 enum class BookingStatus { CONFIRMED, COMPLETED, CANCELLED }
@@ -46,7 +49,7 @@ data class Booking(
     val amount: Double,
     val status: BookingStatus,
     val customer: String = "Arjun Patel"
-)
+) : java.io.Serializable
 
 @Immutable
 data class AppNotification(
@@ -56,7 +59,7 @@ data class AppNotification(
     val time: String,
     val unread: Boolean,
     val type: String
-)
+) : java.io.Serializable
 
 @Immutable
 data class UserProfile(
@@ -64,7 +67,7 @@ data class UserProfile(
     val phone: String = "+91 98765 43210",
     val email: String = "arjun.patel@example.com",
     val location: String = "Vadodara, Gujarat"
-)
+) : java.io.Serializable
 
 @Immutable
 data class DashboardMetric(val label: String, val value: String, val delta: String)

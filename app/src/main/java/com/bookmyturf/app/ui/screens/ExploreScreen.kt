@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
+import com.bookmyturf.app.ui.components.VenuePhoto
 import com.bookmyturf.app.R
 import com.bookmyturf.app.Routes
 import com.bookmyturf.app.data.Sport
@@ -192,7 +193,7 @@ private fun ExploreChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ExploreTurfCard(turf: Turf, isVisible: Boolean, onOpen: () -> Unit, onFavorite: () -> Unit) {
+internal fun ExploreTurfCard(turf: Turf, isVisible: Boolean, onOpen: () -> Unit, onFavorite: () -> Unit) {
     val fallbackPhoto = when (turf.visualSeed.mod(6)) {
         1, 4 -> R.drawable.venue_cricket
         5 -> R.drawable.venue_badminton
@@ -224,11 +225,7 @@ private fun ExploreTurfCard(turf: Turf, isVisible: Boolean, onOpen: () -> Unit, 
         Box(Modifier.fillMaxWidth().aspectRatio(1.85f)) {
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                 val index = page.mod(4)
-                Image(
-                    painterResource(photos[index]), "${turf.name}, photo ${index + 1} of 4",
-                    Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
-                    alignment = when (index) { 1 -> Alignment.CenterStart; 2 -> Alignment.CenterEnd; 3 -> Alignment.BottomCenter; else -> Alignment.Center }
-                )
+                VenuePhoto(turf, Modifier.fillMaxSize(), index)
             }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink.copy(.2f), Color.Transparent, Ink.copy(.75f)))))
             Surface(Modifier.align(Alignment.TopStart).padding(12.dp), color = Ink.copy(.8f), shape = RoundedCornerShape(10.dp)) {

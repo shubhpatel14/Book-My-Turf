@@ -2,51 +2,81 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function owns(uid) { return signedIn() && request.auth.uid == uid; }
-    function isAdmin() { return signedIn() && request.auth.token.admin == true; }
-    function validBooking() {
-      return request.resource.data.userId == request.auth.uid
-        && request.resource.data.amount is number
-        && request.resource.data.amount >= 0
-        && request.resource.data.paymentStatus in ['pending', 'verified', 'failed']
-        && request.resource.data.bookingStatus in ['pending', 'confirmed', 'cancelled', 'completed'];
+    function enabled() {
+      return signedIn() && (!exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('disabled', false) == false);
     }
-
-    match /users/{userId} {
-      allow read, update: if owns(userId) || isAdmin();
-      allow create: if owns(userId);
+    function admin() { return enabled() && request.auth.token.get('admin', false) == true; }
+    function own(uid) { return signedIn() && request.auth.uid == uid; }
+    function validProfile(uid) {
+      return request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'location', 'disabled'])
+        && request.resource.data.uid == uid
+        && request.resource.data.name is string && request.resource.data.name.size() <= 120
+        && request.resource.data.phone is string && request.resource.data.phone.size() <= 30
+        && request.resource.data.email is string && request.resource.data.email.size() <= 254
+        && request.resource.data.location is string && request.resource.data.location.size() <= 300;
     }
-    match /admins/{adminId} { allow read, write: if isAdmin(); }
-    match /turfs/{turfId} {
-      allow read: if true;
-      allow write: if isAdmin();
+    match /users/{uid} {
+      allow read: if own(uid) || admin();
+      allow create: if own(uid) && validProfile(uid)
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.get('disabled', false) == false;
+      allow update: if validProfile(uid) && (
+        (own(uid) && enabled() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone', 'location']))
+        || (admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['disabled'])));
+      match /favorites/{turfId} {
+        allow read, delete: if own(uid) && enabled();
+        allow create, update: if own(uid) && enabled() && request.resource.data.keys().hasOnly(['turfId']) && request.resource.data.turfId == turfId;
+      }
     }
-    match /sports/{sportId} { allow read: if true; allow write: if isAdmin(); }
-    match /slots/{slotId} { allow read: if true; allow write: if isAdmin(); }
-    match /bookings/{bookingId} {
-      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if signedIn() && validBooking();
-      allow update: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bookingStatus', 'cancelledAt'])
-        && request.resource.data.bookingStatus == 'cancelled');
+    match /turfs/{id} {
+      allow read: if admin() || (enabled() && resource.data.active == true);
+      allow create, update: if admin()
+        && request.resource.data.keys().hasOnly(['name','area','city','sports','pricePerHour','rating','distanceKm','description','facilities','isIndoor','active','visualSeed','photoUris','openingHour','closingHour'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.pricePerHour is int && request.resource.data.pricePerHour > 0 && request.resource.data.pricePerHour <= 1000000
+        && request.resource.data.rating is number && request.resource.data.rating >= 0 && request.resource.data.rating <= 5
+        && request.resource.data.distanceKm is number && request.resource.data.distanceKm >= 0
+        && request.resource.data.sports is list && request.resource.data.sports.size() > 0
+        && request.resource.data.photoUris is list && request.resource.data.photoUris.size() <= 4
+        && request.resource.data.openingHour is int && request.resource.data.openingHour >= 0
+        && request.resource.data.closingHour is int && request.resource.data.closingHour <= 23
+        && request.resource.data.closingHour > request.resource.data.openingHour
+        && request.resource.data.active is bool && request.resource.data.isIndoor is bool;
+      allow delete: if admin();
     }
-    match /payments/{paymentId} {
-      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow write: if false; // Trusted backend only via Admin SDK.
+    match /slots/{id} {
+      allow read: if enabled();
+      allow create, update: if admin()
+        && request.resource.data.keys().hasOnly(['turfId','date','day','time','price','state'])
+        && request.resource.data.price is int && request.resource.data.price > 0 && request.resource.data.price <= 1000000
+        && request.resource.data.state in ['AVAILABLE','BLOCKED'];
+      allow delete: if admin();
     }
-    match /favorites/{favoriteId} {
-      allow read, delete: if signedIn() && resource.data.userId == request.auth.uid;
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+    // No customer identity, booking IDs or private booking details are published here.
+    match /reservations/{id} { allow read: if enabled(); allow write: if false; }
+    match /bookings/{id} {
+      allow read: if enabled() && (admin() || resource.data.userId == request.auth.uid);
+      allow write: if false; // Only trusted callable functions reserve/cancel slots.
     }
-    match /reviews/{reviewId} {
-      allow read: if true;
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+    match /notifications/{id} {
+      allow read: if enabled() && resource.data.userId == request.auth.uid;
+      allow update: if enabled() && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unread'])
+        && request.resource.data.unread == false;
     }
-    match /coupons/{couponId} { allow read: if signedIn(); allow write: if isAdmin(); }
-    match /notifications/{notificationId} {
-      allow read, update: if signedIn() && resource.data.userId == request.auth.uid;
-      allow create, delete: if isAdmin();
+    match /offers/{id} {
+      allow read: if admin() || (enabled() && resource.data.active == true);
+      allow write: if admin();
     }
+    match /reviews/{id} {
+      allow read: if admin() || (enabled() && resource.data.published == true);
+      allow write: if admin();
+    }
+    match /config/public {
+      allow read: if enabled();
+      allow write: if admin() && request.resource.data.keys().hasOnly(['acceptBookings']) && request.resource.data.acceptBookings is bool;
+    }
+    match /{document=**} { allow read, write: if false; }
   }
 }

@@ -11,3 +11,7 @@ app/google-services.json
 *.jks
 *.keystore
 local.properties
+firebase/functions/node_modules/
+firebase-debug*.log
+firestore-debug.log
+.firebase/

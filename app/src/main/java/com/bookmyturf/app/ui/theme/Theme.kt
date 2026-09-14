@@ -11,6 +11,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.bookmyturf.app.R
 
@@ -72,6 +73,23 @@ private val AppShapes = Shapes(
     extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(20)
 )
 
+val LocalAdminStyle = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+@Composable
+fun AdminAppearance(content: @Composable () -> Unit) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalAdminStyle provides true) {
+        MaterialTheme(colorScheme = DarkColors, typography = AppTypography, shapes = AppShapes, content = content)
+    }
+}
+
+private val UserTypography = AppTypography.copy(
+    displayLarge = AppTypography.displayLarge.copy(fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, fontSize = 38.sp, lineHeight = 44.sp, letterSpacing = 0.sp),
+    displayMedium = AppTypography.displayMedium.copy(fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp, lineHeight = 39.sp, letterSpacing = 0.sp),
+    headlineLarge = AppTypography.headlineLarge.copy(fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, lineHeight = 35.sp, letterSpacing = 0.sp),
+    headlineMedium = AppTypography.headlineMedium.copy(fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 31.sp, letterSpacing = 0.sp),
+    titleLarge = AppTypography.titleLarge.copy(fontFamily = ManropeUi, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 27.sp, letterSpacing = 0.sp)
+)
+
 @Composable
 fun BookMyTurfTheme(content: @Composable () -> Unit) {
     val view = LocalView.current
@@ -85,5 +103,5 @@ fun BookMyTurfTheme(content: @Composable () -> Unit) {
         }
         onDispose { }
     }
-    MaterialTheme(colorScheme = DarkColors, typography = AppTypography, shapes = AppShapes, content = content)
+    MaterialTheme(colorScheme = DarkColors.copy(primary = PulseLavender, onPrimary = Ink, secondary = PulsePurple), typography = UserTypography, shapes = AppShapes.copy(small = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), medium = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), large = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)), content = content)
 }

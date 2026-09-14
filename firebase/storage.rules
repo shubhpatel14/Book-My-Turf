@@ -1,17 +1,17 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function enabled() {
+      return request.auth != null && (!firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)) ||
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('disabled', false) == false);
+    }
+    function admin() { return enabled() && request.auth.token.get('admin', false) == true; }
     match /turf-images/{turfId}/{fileName} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.token.admin == true
-        && request.resource.size < 8 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+      allow read: if enabled();
+      allow create, update: if admin() && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if admin();
     }
-    match /profile-images/{userId}/{fileName} {
-      allow read: if true;
-      allow write: if request.auth != null && request.auth.uid == userId
-        && request.resource.size < 4 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
-    }
+    match /{path=**} { allow read, write: if false; }
   }
 }

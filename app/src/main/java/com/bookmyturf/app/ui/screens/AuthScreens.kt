@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -32,6 +33,12 @@ import com.bookmyturf.app.ui.AppViewModel
 import com.bookmyturf.app.ui.AuthRole
 import com.bookmyturf.app.ui.components.*
 import com.bookmyturf.app.ui.theme.*
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -59,9 +66,9 @@ fun SplashScreen(onDone: () -> Unit) {
 @Composable
 fun OnboardingScreen(onDone: () -> Unit) {
     val pages = listOf(
-        Triple("FIND YOUR\nTURF", "Discover premium sports turfs near you.", Sport.FOOTBALL),
-        Triple("PICK YOUR\nSLOT", "Choose the perfect date and time.", Sport.CRICKET),
-        Triple("BOOK &\nPLAY", "Secure your slot with easy UPI payment.", Sport.BADMINTON)
+        Triple("Find your turf", "Discover premium sports turfs near you.", Sport.FOOTBALL),
+        Triple("Pick your slot", "Choose the perfect date and time.", Sport.CRICKET),
+        Triple("Book & play", "Secure your slot with easy UPI payment.", Sport.BADMINTON)
     )
     val pager = rememberPagerState { pages.size }
     val scope = rememberCoroutineScope()
@@ -82,12 +89,12 @@ fun OnboardingScreen(onDone: () -> Unit) {
         }
         TextButton(onClick = onDone, Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(12.dp)) { Text("SKIP", color = Color.White) }
         Row(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 24.dp, bottom = 32.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            repeat(pages.size) { Box(Modifier.width(if (it == pager.currentPage) 28.dp else 7.dp).height(7.dp).background(if (it == pager.currentPage) Lime else Line, CircleShape)) }
+            repeat(pages.size) { Box(Modifier.width(if (it == pager.currentPage) 28.dp else 7.dp).height(7.dp).background(if (it == pager.currentPage) PulseLavender else Line, CircleShape)) }
         }
         Button(
             onClick = { if (pager.currentPage == pages.lastIndex) onDone() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
             modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 24.dp, bottom = 20.dp).height(54.dp),
-            shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink)
+            shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = PulseLavender, contentColor = Ink)
         ) { Text(if (pager.currentPage == pages.lastIndex) "GET STARTED" else "NEXT", style = MaterialTheme.typography.labelLarge); Spacer(Modifier.width(8.dp)); Icon(Icons.Default.ArrowForward, null) }
     }
 }
@@ -103,10 +110,15 @@ private fun AppTextField(value: String, onValueChange: (String) -> Unit, label: 
 }
 
 @Composable
-fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit, onRegister: () -> Unit) {
-    var identifier by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit) {
+    val busy by vm.authBusy
     var error by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    fun finishLogin(message: String?) {
+        error = message
+        if (message == null) { if (vm.authRole.value == AuthRole.ADMIN) onAdmin() else onUser() }
+    }
     Column(Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).imePadding()) {
         Box(
             Modifier.fillMaxWidth().height(250.dp).background(
@@ -117,37 +129,37 @@ fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit, onReg
             BrandMark(Modifier.align(Alignment.Center))
         }
         Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding()) {
-            Text("YOUR NEXT GAME\nSTARTS HERE.", style = MaterialTheme.typography.displayMedium)
+            Text("Your next game\nstarts here.", style = MaterialTheme.typography.displayMedium)
             Spacer(Modifier.height(8.dp)); Text("Sign in to discover and book arenas near you.", color = TextMuted)
             Spacer(Modifier.height(26.dp))
-            AppTextField(identifier, { identifier = it }, "Mobile number or email", Icons.Default.Person)
-            Spacer(Modifier.height(14.dp)); AppTextField(password, { password = it }, "Password", Icons.Default.Lock, true)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { error = "Password reset link simulated for demo." }) { Text("FORGOT PASSWORD?", color = PulseLavender, style = MaterialTheme.typography.labelMedium) } }
-            if (error != null) Text(error!!, color = if (error!!.contains("simulated")) TextMuted else Danger, style = MaterialTheme.typography.bodyMedium)
+            if (error != null) Text(error!!, color = Danger, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(8.dp))
-            Button(
+            OutlinedButton(
                 onClick = {
-                    if (vm.login(identifier, password)) { if (vm.authRole.value == AuthRole.ADMIN) onAdmin() else onUser() }
-                    else error = "Enter a valid email/mobile and a password with 6+ characters."
+                    scope.launch {
+                        error = null
+                        try {
+                            val option = GetSignInWithGoogleOption.Builder(context.getString(R.string.default_web_client_id)).build()
+                            val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+                            val credential = CredentialManager.create(context).getCredential(context, request).credential
+                            if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                                vm.loginWithGoogle(GoogleIdTokenCredential.createFrom(credential.data).idToken, ::finishLogin)
+                            } else error = "Google returned an unsupported credential."
+                        } catch (_: GetCredentialException) {
+                            error = "Google sign-in was cancelled or no account is available."
+                        } catch (exception: Exception) {
+                            error = exception.message ?: "Google sign-in failed."
+                        }
+                    }
                 },
+                enabled = !busy,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = PulsePurple, contentColor = Color.White)
-            ) { Text("CONTINUE", fontWeight = FontWeight.ExtraBold) }
+                border = BorderStroke(1.dp, PulseLavender),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+            ) { Text(if (busy) "Signing in…" else "Continue", fontWeight = FontWeight.ExtraBold) }
             Spacer(Modifier.height(14.dp))
-            OutlinedButton(onClick = { vm.login("demo@bookmyturf.app", "player123"); onUser() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, Line)) {
-                Icon(Icons.Default.SportsSoccer, null); Spacer(Modifier.width(10.dp)); Text("CONTINUE WITH DEMO USER", style = MaterialTheme.typography.labelLarge)
-            }
-            Spacer(Modifier.height(20.dp))
-            Surface(color = Steel, shape = RoundedCornerShape(16.dp), border = BorderStroke(1.dp, PulsePurple.copy(.42f))) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("DEMO ADMIN CREDENTIALS", color = PulseLavender, style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(8.dp)); Text("admin@bookmyturf.demo", fontWeight = FontWeight.Bold); Text("Admin@12345", color = TextMuted)
-                    Spacer(Modifier.height(8.dp)); TextButton(onClick = { identifier = "admin@bookmyturf.demo"; password = "Admin@12345" }, contentPadding = PaddingValues(0.dp)) { Text("USE CREDENTIALS", color = PulseLavender) }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) { Text("NEW HERE?", color = TextMuted, style = MaterialTheme.typography.labelMedium); TextButton(onClick = onRegister) { Text("CREATE ACCOUNT", color = PulseLavender, style = MaterialTheme.typography.labelMedium) } }
+            Text("Choose your Google account. New users are registered automatically; admin access is assigned securely to the approved account.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(18.dp))
         }
     }
@@ -155,11 +167,12 @@ fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit, onReg
 
 @Composable
 fun RegistrationScreen(vm: AppViewModel, onBack: () -> Unit, onComplete: () -> Unit) {
+    val busy by vm.authBusy
     var name by remember { mutableStateOf("") }; var phone by remember { mutableStateOf("") }; var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }; var confirm by remember { mutableStateOf("") }; var error by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(24.dp)) {
         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") }
-        Spacer(Modifier.height(14.dp)); Text("JOIN THE\nARENA.", style = MaterialTheme.typography.displayMedium); Text("Create your player profile.", color = TextMuted)
+        Spacer(Modifier.height(14.dp)); Text("Join the arena", style = MaterialTheme.typography.displayMedium); Text("Create your player profile.", color = TextMuted)
         Spacer(Modifier.height(28.dp))
         AppTextField(name, { name = it }, "Full name", Icons.Default.Person); Spacer(Modifier.height(12.dp))
         AppTextField(phone, { phone = it.filter(Char::isDigit).take(10) }, "Mobile number", Icons.Default.Phone, keyboardType = KeyboardType.Phone); Spacer(Modifier.height(12.dp))
@@ -167,9 +180,9 @@ fun RegistrationScreen(vm: AppViewModel, onBack: () -> Unit, onComplete: () -> U
         AppTextField(password, { password = it }, "Password", Icons.Default.Lock, true); Spacer(Modifier.height(12.dp))
         AppTextField(confirm, { confirm = it }, "Confirm password", Icons.Default.Lock, true)
         if (error != null) { Spacer(Modifier.height(10.dp)); Text(error!!, color = Danger, style = MaterialTheme.typography.bodyMedium) }
-        Spacer(Modifier.height(24.dp)); PrimaryButton("Create Account", {
+        Spacer(Modifier.height(24.dp)); PrimaryButton(if (busy) "Creating account…" else "Create account", enabled = !busy, onClick = {
             error = when { name.trim().length < 3 -> "Enter your full name."; phone.length != 10 -> "Enter a valid 10-digit Indian mobile number."; !email.contains("@") -> "Enter a valid email."; password.length < 8 -> "Password must be at least 8 characters."; password != confirm -> "Passwords do not match."; else -> null }
-            if (error == null) { vm.login(email, password); onComplete() }
+            if (error == null) vm.register(name, phone, email, password, confirm) { message -> error = message; if (message == null) onComplete() }
         })
         Spacer(Modifier.height(16.dp)); Text("By joining, you agree to the Terms & Conditions and Privacy Policy.", color = TextMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }

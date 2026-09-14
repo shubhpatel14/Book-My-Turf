@@ -115,23 +115,23 @@ fun MyBookingsScreen(vm: AppViewModel, nav: NavController) {
 
 @Composable
 fun FavoritesScreen(vm: AppViewModel, nav: NavController) {
-    val turfs by vm.turfs.collectAsStateWithLifecycle(); val favorites = remember(turfs) { turfs.filter { it.isFavorite } }
+    val turfs by vm.turfs.collectAsStateWithLifecycle(); val favorites = remember(turfs) { turfs.filter { it.isFavorite && it.active } }
     Scaffold(topBar = { UserTopBar("My turfs", nav, true) }, containerColor = Ink) { padding ->
         if (favorites.isEmpty()) Column(Modifier.fillMaxSize().padding(padding).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(Icons.Outlined.FavoriteBorder, null, Modifier.size(60.dp), tint = TextMuted); Text("NO FAVORITES", style = MaterialTheme.typography.headlineMedium); Text("Tap the heart on a turf to keep it here.", color = TextMuted, textAlign = TextAlign.Center) }
-        else LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { item { Text("YOUR GO-TO ARENAS", color = TextMuted, style = MaterialTheme.typography.labelMedium) }; items(favorites, key = { it.id }) { turf -> TurfCard(turf, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) }) } }
+        else LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { item { Text("YOUR GO-TO ARENAS", color = TextMuted, style = MaterialTheme.typography.labelMedium) }; items(favorites, key = { it.id }) { turf -> ExploreTurfCard(turf, false, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) }) } }
     }
 }
 
 @Composable
 fun NotificationsScreen(vm: AppViewModel, nav: NavController) {
     val notifications by vm.notifications.collectAsStateWithLifecycle()
-    Scaffold(topBar = { UserTopBar("Notifications", nav, true) }, containerColor = Ink) { padding -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        item { Row(Modifier.fillMaxWidth().padding(bottom = 14.dp)) { Text("GAME UPDATES", color = TextMuted, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.weight(1f)); Text("MARK ALL READ", color = Lime, style = MaterialTheme.typography.labelMedium) } }
+    Scaffold(topBar = { UserTopBar("Notifications", nav, true) }, containerColor = Ink) { padding -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Row(Modifier.fillMaxWidth().padding(bottom = 14.dp)) { Text("GAME UPDATES", color = TextMuted, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.weight(1f)); TextButton(onClick = { vm.markNotificationsRead() }) { Text("Mark all read", color = PulseLavender, style = MaterialTheme.typography.labelMedium) } } }
         items(notifications, key = { it.id }) { n -> NotificationItem(n) }
     } }
 }
 
-@Composable private fun NotificationItem(item: AppNotification) { val icon = when (item.type) { "booking" -> Icons.Default.CheckCircle; "reminder" -> Icons.Default.Alarm; "payment" -> Icons.Default.Payments; else -> Icons.Default.SportsSoccer }; Surface(color = if (item.unread) Lime.copy(.055f) else Ink, border = BorderStroke(0.5.dp, Line)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) { Box(Modifier.size(42.dp).background(if (item.unread) Lime else Steel, CircleShape), contentAlignment = Alignment.Center) { Icon(icon, null, tint = if (item.unread) Ink else TextMuted, modifier = Modifier.size(21.dp)) }; Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.Bold); Text(item.message, color = TextMuted); Text(item.time.uppercase(), color = if (item.unread) Lime else TextMuted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp)) }; if (item.unread) Box(Modifier.size(7.dp).background(Lime, CircleShape)) } } }
+@Composable private fun NotificationItem(item: AppNotification) { val icon = when (item.type) { "booking" -> Icons.Default.CheckCircle; "reminder" -> Icons.Default.Alarm; "payment" -> Icons.Default.Payments; else -> Icons.Default.SportsSoccer }; Surface(color = if (item.unread) PulseLavender.copy(.08f) else Charcoal, shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Line)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Top) { Box(Modifier.size(42.dp).background(if (item.unread) PulseLavender else Steel, CircleShape), contentAlignment = Alignment.Center) { Icon(icon, null, tint = if (item.unread) Ink else TextMuted, modifier = Modifier.size(21.dp)) }; Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(item.title, fontWeight = FontWeight.Bold); Text(item.message, color = TextMuted); Text(item.time.uppercase(), color = if (item.unread) PulseLavender else TextMuted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp)) }; if (item.unread) Box(Modifier.size(7.dp).background(PulseLavender, CircleShape)) } } }
 
 @Composable
 fun ProfileScreen(vm: AppViewModel, nav: NavController, onLogout: () -> Unit) {
@@ -221,7 +221,7 @@ private data class ProfileItem(val label: String, val icon: androidx.compose.ui.
         Column {
             items.forEachIndexed { index, item ->
                 Row(Modifier.fillMaxWidth().clickable(onClick = item.action).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(38.dp).background(PulsePurple.copy(.16f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(38.dp).background(PulsePurple.copy(.16f), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) {
                         Icon(item.icon, null, Modifier.size(20.dp), tint = PulseLavender)
                     }
                     Text(item.label, Modifier.weight(1f).padding(horizontal = 12.dp), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)

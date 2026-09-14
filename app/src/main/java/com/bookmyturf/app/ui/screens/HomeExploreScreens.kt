@@ -169,13 +169,10 @@ fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modi
 
 @Composable
 fun UserTopBar(title: String? = null, nav: NavController, showBack: Boolean = false, animateBrand: Boolean = true) {
-    Row(Modifier.fillMaxWidth().statusBarsPadding().height(72.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (showBack) IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.Default.ArrowBack, "Back") } else BrandMark(compact = true, animatedCrest = animateBrand)
-        if (title != null) Text(title.uppercase(), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = if (showBack) 8.dp else 16.dp)) else Spacer(Modifier.weight(1f))
-        IconButton(onClick = { nav.navigate(Routes.FAVORITES) }) { Icon(Icons.Outlined.FavoriteBorder, "Favorites") }
-        BadgedBox(badge = { Badge(containerColor = Lime, contentColor = Ink) { Text("2") } }) {
-            IconButton(onClick = { nav.navigate(Routes.NOTIFICATIONS) }) { Icon(Icons.Outlined.Notifications, "Notifications") }
-        }
+    Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (showBack) IconButton(onClick = { nav.popBackStack() }, modifier = Modifier.background(Steel, CircleShape)) { Icon(Icons.Default.ChevronLeft, "Back") }
+        Text(title ?: "bookmyturf", Modifier.weight(1f).padding(start = if (showBack) 12.dp else 0.dp), fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+        IconButton(onClick = { nav.navigate(Routes.FAVORITES) }) { Icon(Icons.Outlined.FavoriteBorder, "Saved turfs", tint = PulseLavender) }
     }
 }
 
@@ -221,12 +218,12 @@ fun HomeHero(onBook: () -> Unit) {
                     Text(message.subtitle, color = Color.White.copy(.75f), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
                 }
             }
-            Spacer(Modifier.height(16.dp)); Button(onClick = onBook, shape = RoundedCornerShape(7.dp), colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Ink), contentPadding = PaddingValues(horizontal = 17.dp, vertical = 12.dp)) { Text("FIND A TURF", style = MaterialTheme.typography.labelLarge); Spacer(Modifier.width(8.dp)); Icon(Icons.Default.ArrowForward, null, Modifier.size(17.dp)) }
+            Spacer(Modifier.height(16.dp)); Button(onClick = onBook, shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = PulseLavender, contentColor = Ink), contentPadding = PaddingValues(horizontal = 17.dp, vertical = 12.dp)) { Text("FIND A TURF", style = MaterialTheme.typography.labelLarge); Spacer(Modifier.width(8.dp)); Icon(Icons.Default.ArrowForward, null, Modifier.size(17.dp)) }
         }
         Row(Modifier.align(Alignment.BottomEnd).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             heroMessages.indices.forEach { index ->
                 val width by animateDpAsState(if (messageIndex == index) 18.dp else 6.dp, tween(180), label = "heroIndicator")
-                Box(Modifier.width(width).height(4.dp).background(if (messageIndex == index) Lime else Color.White.copy(.42f), CircleShape))
+                Box(Modifier.width(width).height(4.dp).background(if (messageIndex == index) PulseLavender else Color.White.copy(.42f), CircleShape))
             }
         }
     }
@@ -238,17 +235,17 @@ private fun PlayerGameProfile(nav: NavController, player: UserProfile, games: In
     val levelProgress by animateFloatAsState(if (started) .72f else 0f, tween(720, easing = FastOutSlowInEasing), label = "playerLevel")
     val gameCount by animateIntAsState(if (started) games else 0, tween(650, easing = FastOutSlowInEasing), label = "gameCount")
     LaunchedEffect(Unit) { started = true }
-    Surface(onClick = { nav.navigate(Routes.PROFILE) }, color = Charcoal, shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, Lime.copy(.2f))) {
+    Surface(onClick = { nav.navigate(Routes.PROFILE) }, color = Charcoal, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, PulseLavender.copy(.2f))) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(58.dp)) {
-                Image(painterResource(R.drawable.player_arjun), "Arjun Patel", Modifier.fillMaxSize().clip(CircleShape).border(2.dp, Lime, CircleShape), contentScale = ContentScale.Crop)
-                Box(Modifier.size(14.dp).align(Alignment.BottomEnd).background(Lime, CircleShape).border(3.dp, Charcoal, CircleShape))
+                Image(painterResource(R.drawable.player_arjun), "Arjun Patel", Modifier.fillMaxSize().clip(CircleShape).border(2.dp, PulseLavender, CircleShape), contentScale = ContentScale.Crop)
+                Box(Modifier.size(14.dp).align(Alignment.BottomEnd).background(PulseLavender, CircleShape).border(3.dp, Charcoal, CircleShape))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Text(player.name.uppercase(), style = MaterialTheme.typography.titleMedium, maxLines = 1); Spacer(Modifier.width(7.dp)); Icon(Icons.Default.Verified, null, Modifier.size(15.dp), tint = Lime) }
-                Text("STRIKER • LEVEL 12", color = Lime, style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(7.dp)); LinearProgressIndicator({ levelProgress }, Modifier.fillMaxWidth().height(5.dp), color = Lime, trackColor = Line)
+                Row(verticalAlignment = Alignment.CenterVertically) { Text(player.name.uppercase(), style = MaterialTheme.typography.titleMedium, maxLines = 1); Spacer(Modifier.width(7.dp)); Icon(Icons.Default.Verified, null, Modifier.size(15.dp), tint = PulseLavender) }
+                Text("STRIKER • LEVEL 12", color = PulseLavender, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(7.dp)); LinearProgressIndicator({ levelProgress }, Modifier.fillMaxWidth().height(5.dp), color = PulseLavender, trackColor = Line)
             }
             Spacer(Modifier.width(12.dp)); Column(horizontalAlignment = Alignment.End) { Text(gameCount.toString().padStart(2, '0'), style = MaterialTheme.typography.headlineMedium); Text("GAMES", color = TextMuted, style = MaterialTheme.typography.labelMedium) }
         }
@@ -268,10 +265,10 @@ private fun NextGameCard(onOpen: () -> Unit) {
         }
     }
     val countdown = String.format(Locale.US, "%02d:%02d:%02d", remainingSeconds / 3600, (remainingSeconds % 3600) / 60, remainingSeconds % 60)
-    Surface(onClick = onOpen, color = Steel, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Line)) {
+    Surface(onClick = onOpen, color = Steel, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Line)) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(48.dp).background(Lime, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Bolt, null, tint = Ink) }
-            Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("NEXT GAME", color = Lime, style = MaterialTheme.typography.labelMedium); Text("Strike Arena • Today, 7:00 PM", fontWeight = FontWeight.Bold); Text("Gotri • 2.1 km away", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
+            Box(Modifier.size(48.dp).background(PulseLavender, RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) { Icon(Icons.Default.Bolt, null, tint = Ink) }
+            Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text("NEXT GAME", color = PulseLavender, style = MaterialTheme.typography.labelMedium); Text("Strike Arena • Today, 7:00 PM", fontWeight = FontWeight.Bold); Text("Gotri • 2.1 km away", color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
             Column(horizontalAlignment = Alignment.End) { Text(countdown, style = MaterialTheme.typography.titleMedium); Text("TO KICKOFF", color = TextMuted, style = MaterialTheme.typography.labelMedium) }
         }
     }
@@ -462,9 +459,9 @@ private fun HomeTurfPosterCard(turf: Turf, onOpen: () -> Unit, onFavorite: () ->
         border = BorderStroke(1.dp, Line)
     ) {
         Box {
-            TurfVisual(turf.visualSeed, Modifier.fillMaxWidth().height(198.dp))
-            Surface(Modifier.align(Alignment.TopStart).padding(9.dp), color = Ink.copy(.74f), shape = RoundedCornerShape(10.dp)) {
-                Text("${3 + turf.visualSeed.mod(5)} SLOTS", Modifier.padding(horizontal = 8.dp, vertical = 5.dp), color = PulseLavender, style = MaterialTheme.typography.labelSmall)
+            VenuePhoto(turf, Modifier.fillMaxWidth().height(198.dp))
+            Surface(Modifier.align(Alignment.TopStart).padding(9.dp), color = Ink.copy(.74f), shape = RoundedCornerShape(18.dp)) {
+                Text(if (turf.isIndoor) "INDOOR" else "OUTDOOR", Modifier.padding(horizontal = 8.dp, vertical = 5.dp), color = PulseLavender, style = MaterialTheme.typography.labelSmall)
             }
             IconButton(onClick = onFavorite, Modifier.align(Alignment.TopEnd).padding(4.dp)) {
                 Icon(if (turf.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, "Favorite", tint = if (turf.isFavorite) PulseLavender else Color.White)
@@ -484,6 +481,8 @@ private fun HomeTurfPosterCard(turf: Turf, onOpen: () -> Unit, onFavorite: () ->
 
 @Composable
 fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
+    val operations by vm.operations.collectAsStateWithLifecycle()
+    val offer = operations.offers.firstOrNull { it.active }
     val turfs by vm.turfs.collectAsStateWithLifecycle()
     val profile by vm.profile
     val notifications by vm.notifications.collectAsStateWithLifecycle()
@@ -550,9 +549,9 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
                     }
                 }
             }
-            if (showOffer) item(key = "offer") {
+            if (showOffer && offer != null) item(key = "offer") {
                 Surface(
-                    onClick = { vm.showMessage("FIRSTGAME copied • Demo offer") },
+                    onClick = { vm.showMessage("${offer.code} · ${offer.detail}") },
                     color = Steel,
                     modifier = Modifier.padding(horizontal = 16.dp),
                     shape = RoundedCornerShape(24.dp),
@@ -563,8 +562,8 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
                             Icon(Icons.Default.LocalOffer, null, tint = PulseLavender)
                         }
                         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                            Text("Get 20% off your first game", fontWeight = FontWeight.ExtraBold)
-                            Text("Tap to use FIRSTGAME • Demo offer", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                            Text(offer.detail, fontWeight = FontWeight.ExtraBold)
+                            Text("Offer code: ${offer.code}", color = TextMuted, style = MaterialTheme.typography.bodySmall)
                         }
                         IconButton(onClick = { showOffer = false }) { Icon(Icons.Default.Close, "Dismiss offer", tint = TextMuted) }
                     }
