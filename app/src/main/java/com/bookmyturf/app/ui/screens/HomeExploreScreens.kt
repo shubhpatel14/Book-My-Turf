@@ -51,6 +51,7 @@ import com.bookmyturf.app.ui.components.*
 import com.bookmyturf.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -83,61 +84,81 @@ private val homeSportOrder = listOf(
     Sport.BADMINTON,
     Sport.VOLLEYBALL
 )
-private var previousBottomNavigationIndex = 0
-
 @Composable
 fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modifier) {
     val selectedIndex = userNav.indexOfFirst { it.route == current }.coerceAtLeast(0)
+    val tracker = remember { Animatable(selectedIndex.toFloat()) }
+    val itemMotions = remember {
+        List(userNav.size) { index -> Animatable(if (index == selectedIndex) 1f else 0f) }
+    }
+    LaunchedEffect(selectedIndex) {
+        launch {
+            tracker.animateTo(
+                selectedIndex.toFloat(),
+                tween(durationMillis = 240, easing = FastOutSlowInEasing)
+            )
+        }
+        itemMotions.forEachIndexed { index, motion ->
+            launch {
+                motion.animateTo(
+                    if (index == selectedIndex) 1f else 0f,
+                    tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+    }
     BoxWithConstraints(
         modifier.fillMaxWidth().navigationBarsPadding().height(86.dp),
         contentAlignment = Alignment.Center
     ) {
         val barWidth = if (maxWidth > 390.dp) 360.dp else maxWidth - 28.dp
         Surface(
-            modifier = Modifier.width(barWidth).height(68.dp).shadow(18.dp, RoundedCornerShape(34.dp)),
-            color = Color(0xF2242429),
+            modifier = Modifier.width(barWidth).height(68.dp),
+            color = Color(0xDC202228),
             shape = RoundedCornerShape(34.dp),
-            border = BorderStroke(1.dp, Color.White.copy(.07f))
+            border = BorderStroke(1.dp, Color.White.copy(.1f))
         ) {
             BoxWithConstraints {
                 val itemWidth = maxWidth / userNav.size
                 val trackerWidth = itemWidth - 8.dp
-                val tracker = remember(current) { Animatable(previousBottomNavigationIndex.toFloat()) }
-                LaunchedEffect(selectedIndex) {
-                    tracker.animateTo(selectedIndex.toFloat(), spring(dampingRatio = .72f, stiffness = 360f))
-                    previousBottomNavigationIndex = selectedIndex
-                }
                 Box(
-                    Modifier.offset(x = itemWidth * tracker.value + 4.dp, y = 4.dp).width(trackerWidth).height(60.dp)
-                        .background(Color.White.copy(.09f), RoundedCornerShape(30.dp))
-                        .border(1.dp, PulseLavender.copy(.18f), RoundedCornerShape(30.dp))
+                    Modifier.offset(x = 4.dp, y = 4.dp).width(trackerWidth).height(60.dp)
+                        .graphicsLayer { translationX = itemWidth.toPx() * tracker.value }
+                        .background(Color.White.copy(.12f), RoundedCornerShape(30.dp))
+                        .border(1.dp, Color.White.copy(.12f), RoundedCornerShape(30.dp))
                 )
                 Row(Modifier.fillMaxSize()) {
-                    userNav.forEach { item ->
+                    userNav.forEachIndexed { index, item ->
                         val selected = item.route == current
-                        val motion = remember { Animatable(0f) }
-                        LaunchedEffect(selected) { motion.animateTo(if (selected) 1f else 0f, spring(dampingRatio = .45f, stiffness = 380f)) }
+                        val motion = itemMotions[index]
+                        val itemColor = androidx.compose.ui.graphics.lerp(TextMuted, Color.White, motion.value)
+                        val tabInteraction = remember(item.route) { MutableInteractionSource() }
                         Column(
-                            Modifier.weight(1f).fillMaxHeight().selectable(selected, role = Role.Tab, onClick = {
-                                if (!selected) nav.navigate(item.route) {
-                                    popUpTo(Routes.USER) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                            Modifier.weight(1f).fillMaxHeight().selectable(
+                                selected = selected,
+                                interactionSource = tabInteraction,
+                                indication = null,
+                                role = Role.Tab,
+                                onClick = {
+                                    if (!selected) nav.navigate(item.route) {
+                                        popUpTo(Routes.USER) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
-                            }).padding(vertical = 8.dp),
+                            ).padding(vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
                             Icon(
-                                item.icon, item.label, tint = if (selected) Color.White else TextMuted,
+                                item.icon, item.label, tint = itemColor,
                                 modifier = Modifier.size(24.dp).graphicsLayer {
                                     val p = motion.value
-                                    scaleX = 1f + p * .12f; scaleY = scaleX
-                                    rotationZ = if (item.route == Routes.EXPLORE) p * 360f else 0f
-                                    translationY = if (item.route == Routes.BOOKINGS) p * -6f else 0f
+                                    scaleX = 1f + p * .07f
+                                    scaleY = scaleX
                                 }
                             )
-                            Text(item.label, color = if (selected) Color.White else TextMuted, style = MaterialTheme.typography.labelSmall)
+                            Text(item.label, color = itemColor, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -167,7 +188,6 @@ fun UserScaffold(current: String, nav: NavController, title: String? = null, sho
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             content = content
         )
-        if (!showBack) UserBottomBar(current, nav, Modifier.align(Alignment.BottomCenter))
     }
 }
 
@@ -581,7 +601,6 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
         }
-        UserBottomBar(Routes.USER, nav, Modifier.align(Alignment.BottomCenter))
     }
     if (showSearch) HomeSearchSheet(
         turfs = turfs,

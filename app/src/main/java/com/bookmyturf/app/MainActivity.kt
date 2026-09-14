@@ -9,6 +9,10 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -61,32 +65,58 @@ fun BookMyTurfRoot() {
     val factory = remember(app) { AppViewModelFactory(app.repository) }
     val vm: AppViewModel = viewModel(factory = factory)
     val nav = rememberNavController()
+    val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
     val snackbar = remember { SnackbarHostState() }
     val message by vm.snackbar
     LaunchedEffect(message) {
         if (message != null) { snackbar.showSnackbar(message!!); vm.clearSnackbar() }
     }
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { _ ->
-        NavHost(
-            navController = nav,
-            startDestination = Routes.SPLASH,
+        Box(Modifier.fillMaxSize()) {
+            NavHost(
+                navController = nav,
+                startDestination = Routes.SPLASH,
             enterTransition = {
-                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
-                fadeIn(tween(220)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { direction * it / 5 }
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                if (from in mainTabs && to in mainTabs) {
+                    fadeIn(tween(180, easing = FastOutSlowInEasing))
+                } else {
+                    val direction = tabDirection(from, to)
+                    fadeIn(tween(220)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { direction * it / 5 }
+                }
             },
             exitTransition = {
-                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
-                fadeOut(tween(190)) + slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -direction * it / 8 }
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                if (from in mainTabs && to in mainTabs) {
+                    fadeOut(tween(130, easing = FastOutSlowInEasing))
+                } else {
+                    val direction = tabDirection(from, to)
+                    fadeOut(tween(190)) + slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -direction * it / 8 }
+                }
             },
             popEnterTransition = {
-                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
-                fadeIn(tween(220)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { direction * it / 5 }
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                if (from in mainTabs && to in mainTabs) {
+                    fadeIn(tween(180, easing = FastOutSlowInEasing))
+                } else {
+                    val direction = tabDirection(from, to)
+                    fadeIn(tween(220)) + slideInHorizontally(tween(300, easing = FastOutSlowInEasing)) { direction * it / 5 }
+                }
             },
             popExitTransition = {
-                val direction = tabDirection(initialState.destination.route, targetState.destination.route)
-                fadeOut(tween(190)) + slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -direction * it / 8 }
+                val from = initialState.destination.route
+                val to = targetState.destination.route
+                if (from in mainTabs && to in mainTabs) {
+                    fadeOut(tween(130, easing = FastOutSlowInEasing))
+                } else {
+                    val direction = tabDirection(from, to)
+                    fadeOut(tween(190)) + slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { -direction * it / 8 }
+                }
             }
-        ) {
+            ) {
             composable(Routes.SPLASH) { SplashScreen { nav.navigate(Routes.ONBOARDING) { popUpTo(Routes.SPLASH) { inclusive = true } } } }
             composable(Routes.ONBOARDING) { OnboardingScreen(onDone = { nav.navigate(Routes.LOGIN) { popUpTo(Routes.ONBOARDING) { inclusive = true } } }) }
             composable(Routes.LOGIN) { LoginScreen(vm, onUser = { nav.navigate(Routes.USER) { popUpTo(Routes.LOGIN) { inclusive = true } } }, onAdmin = { nav.navigate(Routes.ADMIN) { popUpTo(Routes.LOGIN) { inclusive = true } } }, onRegister = { nav.navigate(Routes.REGISTER) }) }
@@ -103,6 +133,10 @@ fun BookMyTurfRoot() {
             composable(Routes.NOTIFICATIONS) { NotificationsScreen(vm, nav) }
             composable(Routes.PROFILE) { ProfileScreen(vm, nav, onLogout = { nav.navigate(Routes.LOGIN) { popUpTo(0) } }) }
             composable(Routes.ADMIN) { AdminDashboardScreen(vm, nav, onLogout = { nav.navigate(Routes.LOGIN) { popUpTo(0) } }) }
+            }
+            if (currentRoute in mainTabs) {
+                UserBottomBar(currentRoute!!, nav, Modifier.align(Alignment.BottomCenter))
+            }
         }
     }
 }

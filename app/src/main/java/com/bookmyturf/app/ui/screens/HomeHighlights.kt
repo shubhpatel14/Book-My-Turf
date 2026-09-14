@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -53,7 +55,7 @@ private data class Spotlight(
 )
 
 private val spotlights = listOf(
-    Spotlight("VADODARA CRICKET CHAMPIONS LEAGUE", "FEATURED TOURNAMENT", "6-a-side • Gotri • Registrations soon", R.drawable.lineup_cricket, Color(0xFFFFA24C), Sport.CRICKET, R.raw.vccl),
+    Spotlight("VADODARA CRICKET CHAMPIONS LEAGUE", "FEATURED TOURNAMENT", "6-a-side • Gotri • Registrations soon", R.drawable.vccl_thumbnail, Color(0xFFFFA24C), Sport.CRICKET, R.raw.vccl),
     Spotlight("YOUR FIRST GAME. 20% OFF.", "TODAY'S OFFER", "Use FIRSTGAME • Demo offer", R.drawable.lineup_offer, PulseLavender, Sport.FOOTBALL),
     Spotlight("FRIDAY NIGHT FLOODLIGHT FIVES", "SQUAD SPOTLIGHT", "Football • 5-a-side • Under the lights", R.drawable.lineup_football, PulseLavender, Sport.FOOTBALL),
     Spotlight("RALLY HARD. DOUBLES NIGHT.", "WEEKEND WATCHLIST", "Badminton • Doubles • Indoor courts", R.drawable.lineup_badminton, Color(0xFF71E5DF), Sport.BADMINTON)
@@ -75,6 +77,7 @@ private fun SpotlightVideo(rawResource: Int, shouldPlay: Boolean) {
     val context = LocalContext.current
     val latestShouldPlay = rememberUpdatedState(shouldPlay)
     var prepared by remember { mutableStateOf(false) }
+    var firstFrameRendered by remember { mutableStateOf(false) }
     var textureView by remember { mutableStateOf<TextureView?>(null) }
     val player = remember(rawResource) { MediaPlayer() }
 
@@ -90,9 +93,16 @@ private fun SpotlightVideo(rawResource: Int, shouldPlay: Boolean) {
                 player.start()
             }
         }
+        player.setOnInfoListener { _, what, _ ->
+            if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                firstFrameRendered = true
+            }
+            false
+        }
         player.prepareAsync()
         onDispose {
             player.setOnPreparedListener(null)
+            player.setOnInfoListener(null)
             player.release()
         }
     }
@@ -109,7 +119,7 @@ private fun SpotlightVideo(rawResource: Int, shouldPlay: Boolean) {
     }
 
     AndroidView(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().alpha(if (firstFrameRendered) 1f else 0f),
         factory = { viewContext ->
             TextureView(viewContext).also { view ->
                 textureView = view
@@ -137,6 +147,27 @@ private fun SpotlightVideo(rawResource: Int, shouldPlay: Boolean) {
 }
 
 @Composable
+private fun DelayedSpotlightVideo(video: Int, thumbnail: Int, shouldPlay: Boolean) {
+    var loadVideo by remember(video) { mutableStateOf(false) }
+    LaunchedEffect(shouldPlay) {
+        loadVideo = false
+        if (shouldPlay) {
+            delay(300)
+            loadVideo = true
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(thumbnail),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        if (loadVideo) SpotlightVideo(video, shouldPlay = true)
+    }
+}
+
+@Composable
 fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
     val pager = rememberPagerState(initialPage = spotlights.size * 500, pageCount = { spotlights.size * 1_000 })
     val dragging by pager.interactionSource.collectIsDraggedAsState()
@@ -158,31 +189,41 @@ fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("In the spotlight", Modifier.padding(horizontal = 16.dp), fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
-        HorizontalPager(
-            state = pager,
-            pageSpacing = 12.dp,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            key = { it }
-        ) { page ->
-            val item = spotlights[page % spotlights.size]
-            Card(
-                onClick = { onSport(item.sport) },
-                modifier = Modifier.fillMaxWidth().height(320.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Charcoal)
-            ) {
-                Box(Modifier.fillMaxSize()) {
-                    if (item.video != null) {
-                        SpotlightVideo(item.video, shouldPlay = isVisible && page == pager.currentPage)
-                    } else {
-                        Image(painterResource(item.image), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    }
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.04f), Ink.copy(.52f)))))
-                    Surface(Modifier.align(Alignment.TopStart).padding(14.dp), color = Ink.copy(.75f), shape = RoundedCornerShape(12.dp)) {
-                        Text(item.kicker, Modifier.padding(horizontal = 12.dp, vertical = 7.dp), color = item.accent, style = MaterialTheme.typography.labelSmall)
-                    }
-                    Surface(Modifier.align(Alignment.TopEnd).padding(14.dp), color = Ink.copy(.72f), shape = RoundedCornerShape(12.dp)) {
-                        Text("DEMO", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = Color.White.copy(.78f), style = MaterialTheme.typography.labelSmall)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val cardWidth = maxWidth * .66f
+            val sidePreview = (maxWidth - cardWidth) / 2
+            HorizontalPager(
+                state = pager,
+                pageSize = PageSize.Fixed(cardWidth),
+                pageSpacing = 14.dp,
+                contentPadding = PaddingValues(horizontal = sidePreview),
+                beyondViewportPageCount = 1,
+                key = { it }
+            ) { page ->
+                val item = spotlights[page % spotlights.size]
+                Card(
+                    onClick = { onSport(item.sport) },
+                    modifier = Modifier.fillMaxWidth().aspectRatio(.74f),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Charcoal)
+                ) {
+                    Box(Modifier.fillMaxSize()) {
+                        if (item.video != null) {
+                            DelayedSpotlightVideo(
+                                video = item.video,
+                                thumbnail = item.image,
+                                shouldPlay = isVisible && page == pager.currentPage
+                            )
+                        } else {
+                            Image(painterResource(item.image), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        }
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.04f), Ink.copy(.52f)))))
+                        Surface(Modifier.align(Alignment.TopStart).padding(12.dp), color = Ink.copy(.75f), shape = RoundedCornerShape(12.dp)) {
+                            Text(item.kicker, Modifier.padding(horizontal = 11.dp, vertical = 7.dp), color = item.accent, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Surface(Modifier.align(Alignment.TopEnd).padding(12.dp), color = Ink.copy(.72f), shape = RoundedCornerShape(12.dp)) {
+                            Text("DEMO", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = Color.White.copy(.78f), style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
