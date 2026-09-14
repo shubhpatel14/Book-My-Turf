@@ -2,6 +2,12 @@
 
 package com.bookmyturf.app.ui.screens
 
+import android.graphics.Matrix
+import android.graphics.SurfaceTexture
+import android.media.MediaPlayer
+import android.net.Uri
+import android.view.Surface
+import android.view.TextureView
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -21,10 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -40,15 +48,93 @@ private data class Spotlight(
     val detail: String,
     val image: Int,
     val accent: Color,
-    val sport: Sport
+    val sport: Sport,
+    val video: Int? = null
 )
 
 private val spotlights = listOf(
+    Spotlight("VADODARA CRICKET CHAMPIONS LEAGUE", "FEATURED TOURNAMENT", "6-a-side • Gotri • Registrations soon", R.drawable.lineup_cricket, Color(0xFFFFA24C), Sport.CRICKET, R.raw.vccl),
     Spotlight("YOUR FIRST GAME. 20% OFF.", "TODAY'S OFFER", "Use FIRSTGAME • Demo offer", R.drawable.lineup_offer, PulseLavender, Sport.FOOTBALL),
-    Spotlight("VADODARA CRICKET CHAMPIONS LEAGUE", "FEATURED TOURNAMENT", "6-a-side • Gotri • Registrations soon", R.drawable.lineup_cricket, Color(0xFFFFA24C), Sport.CRICKET),
     Spotlight("FRIDAY NIGHT FLOODLIGHT FIVES", "SQUAD SPOTLIGHT", "Football • 5-a-side • Under the lights", R.drawable.lineup_football, PulseLavender, Sport.FOOTBALL),
     Spotlight("RALLY HARD. DOUBLES NIGHT.", "WEEKEND WATCHLIST", "Badminton • Doubles • Indoor courts", R.drawable.lineup_badminton, Color(0xFF71E5DF), Sport.BADMINTON)
 )
+
+private fun centerCropVideo(view: TextureView, videoWidth: Int, videoHeight: Int) {
+    if (view.width == 0 || view.height == 0 || videoWidth == 0 || videoHeight == 0) return
+    val viewRatio = view.width.toFloat() / view.height
+    val videoRatio = videoWidth.toFloat() / videoHeight
+    val scaleX = if (videoRatio > viewRatio) videoRatio / viewRatio else 1f
+    val scaleY = if (videoRatio < viewRatio) viewRatio / videoRatio else 1f
+    view.setTransform(Matrix().apply {
+        setScale(scaleX, scaleY, view.width / 2f, view.height / 2f)
+    })
+}
+
+@Composable
+private fun SpotlightVideo(rawResource: Int, shouldPlay: Boolean) {
+    val context = LocalContext.current
+    val latestShouldPlay = rememberUpdatedState(shouldPlay)
+    var prepared by remember { mutableStateOf(false) }
+    var textureView by remember { mutableStateOf<TextureView?>(null) }
+    val player = remember(rawResource) { MediaPlayer() }
+
+    DisposableEffect(player, rawResource) {
+        player.setDataSource(context, Uri.parse("android.resource://${context.packageName}/$rawResource"))
+        player.isLooping = true
+        player.setVolume(0f, 0f)
+        player.setOnPreparedListener {
+            prepared = true
+            textureView?.let { view -> centerCropVideo(view, player.videoWidth, player.videoHeight) }
+            if (latestShouldPlay.value) {
+                player.seekTo(0)
+                player.start()
+            }
+        }
+        player.prepareAsync()
+        onDispose {
+            player.setOnPreparedListener(null)
+            player.release()
+        }
+    }
+
+    LaunchedEffect(shouldPlay, prepared) {
+        if (prepared) {
+            if (shouldPlay) {
+                player.seekTo(0)
+                player.start()
+            } else if (player.isPlaying) {
+                player.pause()
+            }
+        }
+    }
+
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { viewContext ->
+            TextureView(viewContext).also { view ->
+                textureView = view
+                view.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                        player.setSurface(Surface(surfaceTexture))
+                        if (prepared) centerCropVideo(view, player.videoWidth, player.videoHeight)
+                        if (prepared && latestShouldPlay.value) player.start()
+                    }
+
+                    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                        if (prepared) centerCropVideo(view, player.videoWidth, player.videoHeight)
+                    }
+
+                    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                        player.setSurface(null)
+                        return true
+                    }
+
+                    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+                }
+            }
+        }
+    )
+}
 
 @Composable
 fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
@@ -58,7 +144,7 @@ fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
     LaunchedEffect(lifecycle, dragging, isVisible) {
         if (isVisible && !dragging) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (isActive) {
-                delay(2_650)
+                delay(5_000)
                 if (!pager.isScrollInProgress) {
                     if (pager.currentPage == pager.pageCount - 1) pager.scrollToPage(spotlights.size * 500 - 1)
                     pager.animateScrollToPage(
@@ -86,7 +172,11 @@ fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
                 colors = CardDefaults.cardColors(containerColor = Charcoal)
             ) {
                 Box(Modifier.fillMaxSize()) {
-                    Image(painterResource(item.image), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    if (item.video != null) {
+                        SpotlightVideo(item.video, shouldPlay = isVisible && page == pager.currentPage)
+                    } else {
+                        Image(painterResource(item.image), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.04f), Ink.copy(.52f)))))
                     Surface(Modifier.align(Alignment.TopStart).padding(14.dp), color = Ink.copy(.75f), shape = RoundedCornerShape(12.dp)) {
                         Text(item.kicker, Modifier.padding(horizontal = 12.dp, vertical = 7.dp), color = item.accent, style = MaterialTheme.typography.labelSmall)

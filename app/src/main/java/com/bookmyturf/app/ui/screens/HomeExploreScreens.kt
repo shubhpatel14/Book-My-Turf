@@ -75,13 +75,21 @@ private val userNav = listOf(
     UserNav("Home", Icons.Default.Home, Routes.USER), UserNav("Explore", Icons.Default.Search, Routes.EXPLORE),
     UserNav("Bookings", Icons.Default.ConfirmationNumber, Routes.BOOKINGS), UserNav("Profile", Icons.Default.Person, Routes.PROFILE)
 )
+private val homeSportOrder = listOf(
+    Sport.CRICKET,
+    Sport.FOOTBALL,
+    Sport.BASKETBALL,
+    Sport.TENNIS,
+    Sport.BADMINTON,
+    Sport.VOLLEYBALL
+)
 private var previousBottomNavigationIndex = 0
 
 @Composable
-fun UserBottomBar(current: String, nav: NavController) {
+fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modifier) {
     val selectedIndex = userNav.indexOfFirst { it.route == current }.coerceAtLeast(0)
     BoxWithConstraints(
-        Modifier.fillMaxWidth().navigationBarsPadding().height(86.dp),
+        modifier.fillMaxWidth().navigationBarsPadding().height(86.dp),
         contentAlignment = Alignment.Center
     ) {
         val barWidth = if (maxWidth > 390.dp) 360.dp else maxWidth - 28.dp
@@ -152,7 +160,15 @@ fun UserTopBar(title: String? = null, nav: NavController, showBack: Boolean = fa
 
 @Composable
 fun UserScaffold(current: String, nav: NavController, title: String? = null, showBack: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
-    Scaffold(topBar = { UserTopBar(title, nav, showBack, animateBrand = true) }, bottomBar = { if (!showBack) UserBottomBar(current, nav) }, containerColor = Ink, content = content)
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = { UserTopBar(title, nav, showBack, animateBrand = true) },
+            containerColor = Ink,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            content = content
+        )
+        if (!showBack) UserBottomBar(current, nav, Modifier.align(Alignment.BottomCenter))
+    }
 }
 
 @Composable
@@ -381,7 +397,7 @@ private fun AnimatedSearchHint(selectedSport: Sport?, selectedCity: String?) {
     LaunchedEffect(selectedSport, selectedCity) {
         if (selectedSport == null && selectedCity == null) {
             while (isActive) {
-                delay(2_500)
+                delay(2_000)
                 hintIndex = (hintIndex + 1) % hints.size
             }
         }
@@ -464,15 +480,11 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
     }
     val locationLabel = selectedCity?.let { "$it, India" } ?: profile.location
 
-    Scaffold(
-        bottomBar = { UserBottomBar(Routes.USER, nav) },
-        containerColor = Ink,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0)
-    ) { padding ->
+    Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
+            Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(bottom = 28.dp),
+            contentPadding = PaddingValues(bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(15.dp)
         ) {
             item(key = "header") {
@@ -511,7 +523,7 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
             }
             item(key = "sports") {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(Sport.entries, key = { it.name }) { sport ->
+                    items(homeSportOrder, key = { it.name }) { sport ->
                         HomeSportTile(sport, selectedSport == sport) {
                             selectedSport = if (selectedSport == sport) null else sport
                         }
@@ -569,6 +581,7 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
                 }
             }
         }
+        UserBottomBar(Routes.USER, nav, Modifier.align(Alignment.BottomCenter))
     }
     if (showSearch) HomeSearchSheet(
         turfs = turfs,
@@ -598,7 +611,7 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("${filtered.size} ARENAS", color = TextMuted, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.weight(1f)); Text("$sort ", color = Lime, style = MaterialTheme.typography.labelMedium); Icon(Icons.Default.SwapVert, null, tint = Lime, modifier = Modifier.size(16.dp).clickable { sort = when (sort) { "Nearest" -> "Cheapest"; "Cheapest" -> "Highest Rated"; else -> "Nearest" } }) }
             if (filtered.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(Icons.Default.SearchOff, null, Modifier.size(54.dp), tint = TextMuted); Spacer(Modifier.height(16.dp)); Text("NO TURFS FOUND", style = MaterialTheme.typography.headlineMedium); Text("Try changing your search or filters.", color = TextMuted); Spacer(Modifier.height(18.dp)); OutlinedButton(onClick = { query = ""; sport = null; indoor = false }) { Text("CLEAR FILTERS") } }
-            } else LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            } else LazyColumn(contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(filtered, key = { it.id }) { turf -> TurfCard(turf, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) }) }
             }
         }

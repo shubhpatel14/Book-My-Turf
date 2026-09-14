@@ -35,7 +35,7 @@ fun MyBookingsScreen(vm: AppViewModel, nav: NavController) {
     val statuses = listOf(BookingStatus.CONFIRMED, BookingStatus.COMPLETED, BookingStatus.CANCELLED); val list = bookings.filter { it.status == statuses[tab] }
     UserScaffold(Routes.BOOKINGS, nav, "My bookings") { padding -> Column(Modifier.fillMaxSize().padding(padding)) {
         TabRow(tab, containerColor = Ink, contentColor = Lime) { listOf("Upcoming", "Completed", "Cancelled").forEachIndexed { index, label -> Tab(tab == index, { tab = index }, text = { Text(label.uppercase(), style = MaterialTheme.typography.labelMedium) }) } }
-        if (list.isEmpty()) EmptyBookings { nav.navigate(Routes.EXPLORE) } else LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { items(list, key = { it.id }) { BookingCard(it, vm) } }
+        if (list.isEmpty()) EmptyBookings { nav.navigate(Routes.EXPLORE) } else LazyColumn(contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { items(list, key = { it.id }) { BookingCard(it, vm) } }
     } }
 }
 
@@ -76,7 +76,7 @@ fun NotificationsScreen(vm: AppViewModel, nav: NavController) {
 @Composable
 fun ProfileScreen(vm: AppViewModel, nav: NavController, onLogout: () -> Unit) {
     val p by vm.profile; var confirmLogout by remember { mutableStateOf(false) }
-    UserScaffold(Routes.PROFILE, nav, "Profile") { padding -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    UserScaffold(Routes.PROFILE, nav, "Profile") { padding -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 112.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PlayerProfileHeader(p) }
         item { Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) { ProfileStat("08", "GAMES", Modifier.weight(1f)); ProfileStat("05", "WINS", Modifier.weight(1f)); ProfileStat("4.8", "RATING", Modifier.weight(1f)) } }
         item { Surface(color = Lime.copy(.08f), shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Lime.copy(.28f))) { Column(Modifier.padding(15.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.EmojiEvents, null, tint = Lime); Spacer(Modifier.width(9.dp)); Text("GAME PROFILE", color = Lime, style = MaterialTheme.typography.labelLarge) }; Spacer(Modifier.height(10.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Tag("Football"); Tag("Striker"); Tag("Evening") }; Spacer(Modifier.height(12.dp)); Text("72% TO LEVEL 13", color = TextMuted, style = MaterialTheme.typography.labelMedium); LinearProgressIndicator({ .72f }, Modifier.fillMaxWidth().padding(top = 6.dp).height(6.dp), color = Lime, trackColor = Line) } } }
