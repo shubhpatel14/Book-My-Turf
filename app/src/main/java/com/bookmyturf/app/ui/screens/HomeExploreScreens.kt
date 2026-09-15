@@ -55,6 +55,7 @@ import com.bookmyturf.app.ui.*
 import com.bookmyturf.app.ui.components.*
 import com.bookmyturf.app.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -91,12 +92,18 @@ private val homeSportOrder = listOf(
 )
 @Composable
 fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modifier) {
-    val selectedIndex = userNav.indexOfFirst { it.route == current }.coerceAtLeast(0)
+    // Animate before composing the destination's images and carousels. A new tap
+    // cancels this effect and retargets from the pill's current position.
+    var requestedRoute by remember { mutableStateOf<String?>(null) }
+    val selectedRoute = requestedRoute ?: current
+    val selectedIndex = userNav.indexOfFirst { it.route == selectedRoute }.coerceAtLeast(0)
     val tracker = remember { Animatable(selectedIndex.toFloat()) }
     val itemMotions = remember {
         List(userNav.size) { index -> Animatable(if (index == selectedIndex) 1f else 0f) }
     }
-    LaunchedEffect(selectedIndex) {
+    LaunchedEffect(selectedIndex, current) {
+        val destination = requestedRoute
+        coroutineScope {
         launch {
             tracker.animateTo(
                 selectedIndex.toFloat(),
@@ -110,6 +117,17 @@ fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modi
                     tween(durationMillis = 180, easing = FastOutSlowInEasing)
                 )
             }
+        }
+        }
+        if (destination != null && destination == requestedRoute) {
+            if (destination != current) {
+                nav.navigate(destination) {
+                    popUpTo(Routes.USER) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            }
+            requestedRoute = null
         }
     }
     BoxWithConstraints(
@@ -134,7 +152,7 @@ fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modi
                 )
                 Row(Modifier.fillMaxSize()) {
                     userNav.forEachIndexed { index, item ->
-                        val selected = item.route == current
+                        val selected = item.route == selectedRoute
                         val motion = itemMotions[index]
                         val itemColor = androidx.compose.ui.graphics.lerp(TextMuted, Color.White, motion.value)
                         val tabInteraction = remember(item.route) { MutableInteractionSource() }
@@ -145,11 +163,7 @@ fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modi
                                 indication = null,
                                 role = Role.Tab,
                                 onClick = {
-                                    if (!selected) nav.navigate(item.route) {
-                                        popUpTo(Routes.USER) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
+                                    if (!selected) requestedRoute = item.route
                                 }
                             ).padding(vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
