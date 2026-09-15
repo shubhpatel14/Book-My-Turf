@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -120,21 +121,44 @@ fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit) {
         error = message
         if (message == null) { if (vm.authRole.value == AuthRole.ADMIN) onAdmin() else onUser() }
     }
-    Column(Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).imePadding()) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Ink)) {
+    val screenHeight = maxHeight
+    Column(Modifier.fillMaxWidth().heightIn(min = screenHeight).verticalScroll(rememberScrollState()).imePadding()) {
         Box(
-            Modifier.fillMaxWidth().height(250.dp).background(
-                Brush.verticalGradient(listOf(Color(0xFF4B23C7), PulsePurpleDark, Ink))
-            )
+            Modifier.fillMaxWidth().height((screenHeight * .46f).coerceIn(290.dp, 460.dp))
         ) {
-            Box(Modifier.size(220.dp).align(Alignment.TopEnd).offset(x = 60.dp, y = (-45).dp).background(Color.White.copy(.035f), CircleShape))
-            BrandMark(Modifier.align(Alignment.Center))
+            Image(painterResource(R.drawable.hero_football), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink.copy(.5f), PulsePurpleDark.copy(.2f), Ink))))
+            Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                BrandMark(compact = true, animatedCrest = false)
+            }
+            Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Surface(color = PulsePurple.copy(.8f), shape = RoundedCornerShape(50)) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SportsSoccer, null, Modifier.size(14.dp), tint = Color.White)
+                        Spacer(Modifier.width(7.dp))
+                        Text("LESS PLANNING. MORE PLAY.", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Text("Your next game\nstarts here.", style = MaterialTheme.typography.displayLarge, color = Color.White)
+            }
         }
-        Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding()) {
-            Text("Your next game\nstarts here.", style = MaterialTheme.typography.displayMedium)
-            Spacer(Modifier.height(8.dp)); Text("Sign in to discover and book arenas near you.", color = TextMuted)
-            Spacer(Modifier.height(26.dp))
+        Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text("Find your arena. Bring your squad. Make time for the game you love.", color = TextMuted, style = MaterialTheme.typography.bodyLarge)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Football" to Icons.Default.SportsSoccer, "Cricket" to Icons.Default.SportsCricket, "Badminton" to Icons.Default.SportsTennis).forEach { (label, icon) ->
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Charcoal).padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(icon, null, Modifier.size(23.dp), tint = PulseLavender)
+                        Text(label, style = MaterialTheme.typography.labelMedium, color = TextPrimary)
+                    }
+                }
+            }
+            HorizontalDivider(color = Line)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Ready to play?", style = MaterialTheme.typography.headlineMedium)
+                Text("Sign in or create your account in one tap.", color = TextMuted, style = MaterialTheme.typography.bodyMedium)
+            }
             if (error != null) Text(error!!, color = Danger, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = {
                     scope.launch {
@@ -154,15 +178,24 @@ fun LoginScreen(vm: AppViewModel, onUser: () -> Unit, onAdmin: () -> Unit) {
                     }
                 },
                 enabled = !busy,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, PulseLavender),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-            ) { Text(if (busy) "Signing in…" else "Continue", fontWeight = FontWeight.ExtraBold) }
-            Spacer(Modifier.height(14.dp))
-            Text("Choose your Google account. New users are registered automatically; admin access is assigned securely to the approved account.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(18.dp))
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                border = BorderStroke(1.dp, Color(0xFF747775)),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = Color(0xFF1F1F1F))
+            ) {
+                if (busy) CircularProgressIndicator(Modifier.size(20.dp), color = PulsePurple, strokeWidth = 2.dp)
+                else Image(painterResource(R.drawable.ic_google), null, Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(if (busy) "Signing in…" else "Continue with Google", fontFamily = ManropeUi, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = TextMuted)
+                Spacer(Modifier.width(6.dp))
+                Text("Secure sign-in with your Google account", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("FIND A TURF  •  PICK A SLOT  •  PLAY", Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 24.dp), textAlign = TextAlign.Center, color = PulseLavender, style = MaterialTheme.typography.labelSmall)
         }
+    }
     }
 }
 

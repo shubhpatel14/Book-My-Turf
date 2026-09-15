@@ -2,6 +2,9 @@
 
 package com.bookmyturf.app.ui.screens
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -33,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +51,7 @@ import com.bookmyturf.app.data.Sport
 import com.bookmyturf.app.data.Turf
 import com.bookmyturf.app.data.UserProfile
 import com.bookmyturf.app.ui.AppViewModel
+import com.bookmyturf.app.ui.*
 import com.bookmyturf.app.ui.components.*
 import com.bookmyturf.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -276,7 +281,7 @@ private fun NextGameCard(onOpen: () -> Unit) {
 
 
 @Composable
-private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController) {
+private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController, onLocationClick: () -> Unit) {
     val infiniteTransition = rememberInfiniteTransition(label = "waterWaves")
     val phase1 by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -385,10 +390,12 @@ private fun DistrictHomeTopBar(location: String, unread: Int, nav: NavController
                 .padding(horizontal = 18.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.LocationOn, null, tint = Color.White.copy(.95f), modifier = Modifier.size(28.dp))
-            Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                Text("PLAYING NEAR", color = PulseLavender, fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                Text(location, color = Color.White, fontFamily = ManropeUi, fontWeight = FontWeight.Medium, maxLines = 2)
+            Row(Modifier.weight(1f).clickable(onClick = onLocationClick), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.LocationOn, "Choose location", tint = Color.White.copy(.95f), modifier = Modifier.size(28.dp))
+                Column(Modifier.padding(start = 10.dp)) {
+                    Text("PLAYING NEAR", color = PulseLavender, fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    Text(location, color = Color.White, fontFamily = ManropeUi, fontWeight = FontWeight.Medium, maxLines = 2)
+                }
             }
             BadgedBox(badge = { if (unread > 0) Badge(containerColor = PulsePurple, contentColor = Color.White) { Text(unread.toString()) } }) {
                 IconButton(onClick = { nav.navigate(Routes.NOTIFICATIONS) }) { Icon(Icons.Outlined.Notifications, "Notifications", tint = Color.White) }
@@ -481,23 +488,61 @@ private fun HomeTurfPosterCard(turf: Turf, onOpen: () -> Unit, onFavorite: () ->
 
 @Composable
 fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val locationPrefs = remember { context.getSharedPreferences("user-location", android.content.Context.MODE_PRIVATE) }
     val operations by vm.operations.collectAsStateWithLifecycle()
     val offer = operations.offers.firstOrNull { it.active }
     val turfs by vm.turfs.collectAsStateWithLifecycle()
     val profile by vm.profile
     val notifications by vm.notifications.collectAsStateWithLifecycle()
     var selectedSport by rememberSaveable { mutableStateOf<Sport?>(null) }
-    var selectedCity by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedCity by rememberSaveable { mutableStateOf(locationPrefs.getString("city", null) ?: profile.location.substringBefore(',').takeIf { it.isNotBlank() }) }
+    var userPlace by remember {
+        mutableStateOf(if (locationPrefs.contains("latitude")) UserPlace(
+            locationPrefs.getString("city", "") ?: "",
+            java.lang.Double.longBitsToDouble(locationPrefs.getLong("latitude", 0)),
+            java.lang.Double.longBitsToDouble(locationPrefs.getLong("longitude", 0))
+        ) else null)
+    }
+    val turfPlaces = remember { mutableStateMapOf<String, UserPlace>() }
+    var showLocationPicker by rememberSaveable { mutableStateOf(false) }
+    var requestedLocation by rememberSaveable { mutableStateOf(false) }
+    fun applyPlace(place: UserPlace) {
+        userPlace = place
+        selectedCity = place.city
+        locationPrefs.edit().putString("city", place.city)
+            .putLong("latitude", java.lang.Double.doubleToRawLongBits(place.latitude))
+            .putLong("longitude", java.lang.Double.doubleToRawLongBits(place.longitude)).apply()
+        val label = "${place.city}, India"
+        if (profile.location != label) vm.saveProfile(profile.copy(location = label))
+    }
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scope.launch { detectUserPlace(context)?.let(::applyPlace) ?: run { showLocationPicker = true } }
+        else showLocationPicker = true
+    }
+    LaunchedEffect(Unit) {
+        if (userPlace != null) return@LaunchedEffect
+        if (hasLocationPermission(context)) detectUserPlace(context)?.let(::applyPlace)
+        else if (!requestedLocation) { requestedLocation = true; locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
+    }
+    LaunchedEffect(turfs) {
+        turfs.map { it.city }.filter { it.isNotBlank() }.distinct().forEach { city ->
+            if (turfPlaces[city.lowercase()] == null) geocodeCity(context, city)?.let { turfPlaces[city.lowercase()] = it }
+        }
+    }
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var showOffer by rememberSaveable { mutableStateOf(true) }
     val listState = rememberLazyListState()
-    val filteredTurfs = remember(turfs, selectedSport, selectedCity) {
-        turfs.filter { turf ->
-            turf.active && (selectedSport == null || selectedSport in turf.sports) &&
-                (selectedCity == null || turf.city == selectedCity)
+    val filteredTurfs = remember(turfs, selectedSport, selectedCity, userPlace, turfPlaces.toMap()) {
+        turfs.mapNotNull { turf ->
+            if (!turf.active || (selectedSport != null && selectedSport !in turf.sports)) return@mapNotNull null
+            val calculated = userPlace?.let { origin -> turfPlaces[turf.city.lowercase()]?.let { distanceKm(origin, it) } }
+            val isNearby = calculated?.let { it <= 50.0 } ?: turf.city.equals(selectedCity, ignoreCase = true)
+            if (isNearby) turf.copy(distanceKm = calculated ?: turf.distanceKm) else null
         }.sortedBy { it.distanceKm }
     }
-    val locationLabel = selectedCity?.let { "$it, India" } ?: profile.location
+    val locationLabel = selectedCity?.let { "$it, India" } ?: "Choose location"
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -507,7 +552,7 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
             verticalArrangement = Arrangement.spacedBy(15.dp)
         ) {
             item(key = "header") {
-                DistrictHomeTopBar(locationLabel, notifications.count { it.unread }, nav)
+                DistrictHomeTopBar(locationLabel, notifications.count { it.unread }, nav) { showLocationPicker = true }
             }
             item(key = "search") {
                 Surface(
@@ -610,4 +655,62 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
         onTurfOpen = { turf -> showSearch = false; nav.navigate(Routes.turf(turf.id)) },
         onDismiss = { showSearch = false }
     )
+    if (showLocationPicker) LocationPickerSheet(
+        currentCity = selectedCity,
+        onDismiss = { showLocationPicker = false },
+        onCurrentLocation = {
+            if (hasLocationPermission(context)) scope.launch {
+                detectUserPlace(context)?.let { applyPlace(it); showLocationPicker = false }
+                    ?: vm.showMessage("Could not detect your location. Choose a city instead.")
+            } else locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        },
+        onCity = { city ->
+            scope.launch {
+                geocodeCity(context, city)?.let { applyPlace(it); showLocationPicker = false }
+                    ?: vm.showMessage("City not found. Check the spelling and try again.")
+            }
+        }
+    )
+}
+
+@Composable
+private fun LocationPickerSheet(
+    currentCity: String?,
+    onDismiss: () -> Unit,
+    onCurrentLocation: () -> Unit,
+    onCity: (String) -> Unit
+) {
+    var search by rememberSaveable { mutableStateOf("") }
+    val matches = remember(search) {
+        indianCities.filter { search.isBlank() || it.contains(search.trim(), ignoreCase = true) }.take(40)
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Charcoal) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(18.dp)) {
+            Text("Choose your location", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+            Text("Only turfs within 50 km will be shown.", color = TextMuted)
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onCurrentLocation, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.MyLocation, null); Spacer(Modifier.width(8.dp)); Text("USE CURRENT LOCATION")
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth(), singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null) }, label = { Text("Search Indian city") })
+            if (search.trim().length >= 2 && matches.none { it.equals(search.trim(), true) }) {
+                TextButton(onClick = { onCity(search.trim()) }, Modifier.fillMaxWidth()) {
+                    Text("Use “${search.trim()}”", color = PulseLavender)
+                }
+            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                items(matches, key = { it }) { city ->
+                    ListItem(
+                        headlineContent = { Text(city) },
+                        leadingContent = { Icon(Icons.Default.LocationCity, null, tint = PulseLavender) },
+                        trailingContent = { if (city.equals(currentCity, true)) Icon(Icons.Default.Check, null, tint = PulseLavender) },
+                        modifier = Modifier.clickable { onCity(city) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
+        }
+    }
 }

@@ -56,9 +56,9 @@ private data class Spotlight(
 
 private val spotlights = listOf(
     Spotlight("VADODARA CRICKET CHAMPIONS LEAGUE", "FEATURED TOURNAMENT", "6-a-side • Gotri • Registrations soon", R.drawable.vccl_thumbnail, Color(0xFFFFA24C), Sport.CRICKET, R.raw.vccl),
-    Spotlight("YOUR FIRST GAME. 20% OFF.", "TODAY'S OFFER", "Use FIRSTGAME • Demo offer", R.drawable.lineup_offer, PulseLavender, Sport.FOOTBALL),
-    Spotlight("FRIDAY NIGHT FLOODLIGHT FIVES", "SQUAD SPOTLIGHT", "Football • 5-a-side • Under the lights", R.drawable.lineup_football, PulseLavender, Sport.FOOTBALL),
-    Spotlight("RALLY HARD. DOUBLES NIGHT.", "WEEKEND WATCHLIST", "Badminton • Doubles • Indoor courts", R.drawable.lineup_badminton, Color(0xFF71E5DF), Sport.BADMINTON)
+    Spotlight("YOUR FIRST GAME. 20% OFF.", "TODAY'S OFFER", "Use FIRSTGAME • Demo offer", R.drawable.spotlight_first_game_v2, PulseLavender, Sport.FOOTBALL),
+    Spotlight("FRIDAY NIGHT FLOODLIGHT FIVES", "SQUAD SPOTLIGHT", "Football • 5-a-side • Under the lights", R.drawable.spotlight_squad_football_v2, PulseLavender, Sport.FOOTBALL),
+    Spotlight("RALLY THE WEEKEND", "WEEKEND WATCHLIST", "Badminton • Fixtures, results and highlights", R.drawable.spotlight_badminton_weekend_v2, Color(0xFF71E5DF), Sport.BADMINTON)
 )
 
 private fun centerCropVideo(view: TextureView, videoWidth: Int, videoHeight: Int) {
@@ -215,7 +215,13 @@ fun HomeHighlights(onSport: (Sport) -> Unit, isVisible: Boolean) {
                                 shouldPlay = isVisible && page == pager.currentPage
                             )
                         } else {
-                            Image(painterResource(item.image), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            Image(
+                                painter = painterResource(item.image),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                alignment = Alignment.Center,
+                                contentScale = ContentScale.Crop
+                            )
                         }
                         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.04f), Ink.copy(.52f)))))
                         Surface(Modifier.align(Alignment.TopStart).padding(12.dp), color = Ink.copy(.75f), shape = RoundedCornerShape(12.dp)) {
