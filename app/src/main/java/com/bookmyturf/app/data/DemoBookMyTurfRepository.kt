@@ -56,8 +56,9 @@ class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurf
     override suspend fun toggleFavorite(turfId: String) {
         mutate { it.copy(turfs = it.turfs.map { turf -> if (turf.id == turfId) turf.copy(isFavorite = !turf.isFavorite) else turf }) }
     }
-    override suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String): Booking {
+    override suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String, transactionId: String): Booking {
         var created: Booking? = null
+        val txId = transactionId.ifBlank { "BMT-DEMO-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase() }
         mutate { current ->
             val latest = current.turfs.firstOrNull { it.id == turf.id } ?: error("This venue is no longer available.")
             require(latest.active && duration > 0) { "Select an active venue and available slots." }
@@ -68,7 +69,7 @@ class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurf
             require(selected.all { it.state == SlotState.AVAILABLE }) { "A selected slot is no longer available. Choose again." }
             val expected = (selected.sumOf { it.price } + 20.0) * 1.18
             require(kotlin.math.abs(total - expected) < .02) { "Pricing changed. Please select your slots again." }
-            val booking = Booking("BMT-" + UUID.randomUUID().toString().take(8).uppercase(), latest.id, latest.name, date, time, duration, expected, BookingStatus.CONFIRMED, customer)
+            val booking = Booking("BMT-" + UUID.randomUUID().toString().take(8).uppercase(), latest.id, latest.name, date, time, duration, expected, BookingStatus.CONFIRMED, customer, paymentMethod = "DEMO_UPI", paymentStatus = "DEMO_PAID", transactionId = txId)
             created = booking
             current.copy(bookings = listOf(booking) + current.bookings,
                 notifications = listOf(AppNotification(UUID.randomUUID().toString(), "Booking confirmed", "${latest.name} · $date · $time", "Just now", true, "booking")) + current.notifications)

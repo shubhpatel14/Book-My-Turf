@@ -43,11 +43,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun SplashScreen(onDone: () -> Unit) {
+fun SplashScreen(sessionReady: Boolean, onDone: () -> Unit) {
     var shown by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (shown) 1f else .86f, tween(380, easing = FastOutSlowInEasing), label = "splash")
     val alpha by animateFloatAsState(if (shown) 1f else 0f, tween(300), label = "splashAlpha")
-    LaunchedEffect(Unit) { shown = true; delay(1_200); onDone() }
+    LaunchedEffect(Unit) { shown = true }
+    LaunchedEffect(sessionReady) { if (sessionReady) { delay(1_200); onDone() } }
     Box(
         Modifier.fillMaxSize().background(
             Brush.verticalGradient(listOf(Color(0xFF4920C8), PulsePurpleDark))

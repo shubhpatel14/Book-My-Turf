@@ -168,10 +168,7 @@ fun SlotBookingScreen(vm: AppViewModel, id: String, nav: NavController) {
     Scaffold(topBar = { BookingTopBar("Pick your slot", nav, true) }, bottomBar = {
         Surface(color = Charcoal, border = BorderStroke(1.dp, Line)) { Column(Modifier.navigationBarsPadding().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text("${draft.slots.size} HOUR${if (draft.slots.size == 1) "" else "S"}", color = TextMuted, style = MaterialTheme.typography.labelMedium); Text(if (draft.slots.isEmpty()) "Select a slot" else formatInr(draft.turfFee), fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = if (draft.slots.isEmpty()) TextPrimary else PulseLavender) }; Text(draft.timeLabel, color = TextMuted, style = MaterialTheme.typography.bodyMedium) }
-            if (!com.bookmyturf.app.data.CloudFeatures.bookingsEnabled) {
-                Text(com.bookmyturf.app.data.CloudFeatures.bookingUnavailable, color = TextMuted)
-            }
-            Spacer(Modifier.height(12.dp)); BookingButton("Review booking", { nav.navigate(Routes.SUMMARY) }, enabled = draft.slots.isNotEmpty() && com.bookmyturf.app.data.CloudFeatures.bookingsEnabled)
+            Spacer(Modifier.height(12.dp)); BookingButton("Review booking", { nav.navigate(Routes.SUMMARY) }, enabled = draft.slots.isNotEmpty())
         } }
     }, containerColor = Ink) { padding ->
         LazyColumn(Modifier.padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -211,39 +208,368 @@ fun BookingSummaryScreen(vm: AppViewModel, nav: NavController) {
 
 @Composable
 fun PaymentScreen(vm: AppViewModel, nav: NavController) {
-    val draft by vm.bookingDraft; val state by vm.paymentState; var method by remember { mutableStateOf("Google Pay") }
-    val methods = listOf("Google Pay", "PhonePe", "Paytm", "BHIM", "Other UPI")
-    Scaffold(topBar = { BookingTopBar("UPI payment", nav, true) }, bottomBar = { Surface(color = Ink) { BookingButton(if (state == PaymentState.PROCESSING) "Processing…" else "Pay Now • ${formatInr(draft.total)}", { vm.processDemoPayment { nav.navigate(Routes.CONFIRMATION) { popUpTo(Routes.PAYMENT) { inclusive = true } } } }, Modifier.navigationBarsPadding().padding(16.dp), enabled = state != PaymentState.PROCESSING) } }, containerColor = Ink) { padding ->
-        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(color = Orange.copy(.12f), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Orange.copy(.4f))) { Text("SIMULATED PAYMENT • DEMO MODE", Modifier.padding(10.dp), color = Orange, style = MaterialTheme.typography.labelMedium) }
-            Spacer(Modifier.height(20.dp)); Text(formatInr(draft.total), fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge); Text("AMOUNT PAYABLE", color = TextMuted, style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(24.dp)); DemoQrCode(Modifier.size(210.dp)); Spacer(Modifier.height(12.dp)); Text("SCAN TO TEST PAYMENT", style = MaterialTheme.typography.labelLarge); Text("DEMO ONLY — NO REAL PAYMENT", color = Danger, style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(6.dp)); Text("UPI ID  bookmyturf@upi", color = TextMuted)
-            Spacer(Modifier.height(24.dp)); Text("CHOOSE A DEMO UPI APP", Modifier.fillMaxWidth(), color = TextMuted, style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(10.dp)); Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { methods.forEach { item -> Surface(onClick = { method = item }, color = if (method == item) PulseLavender.copy(.12f) else Charcoal, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, if (method == item) PulseLavender else Line)) { Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AccountBalanceWallet, null, tint = if (method == item) PulseLavender else TextMuted); Spacer(Modifier.width(12.dp)); Text(item, Modifier.weight(1f), fontWeight = FontWeight.Bold); RadioButton(method == item, { method = item }, colors = RadioButtonDefaults.colors(selectedColor = PulseLavender)) } } } }
+    val draft by vm.bookingDraft
+    val state by vm.paymentState
+    val currentMode by vm.demoPaymentMode
+    val errorMsg by vm.paymentErrorMessage
+    val turf = draft.turf
+
+    var paymentTab by remember { mutableStateOf("UPI_APPS") } // "UPI_APPS" or "QR_CODE"
+    var selectedUpiApp by remember { mutableStateOf("Google Pay") }
+    val upiApps = listOf("Google Pay", "PhonePe", "Paytm", "BHIM UPI", "CRED")
+    var showDevControls by remember { mutableStateOf(false) }
+
+    Scaffold(
+        topBar = { BookingTopBar("Secure Checkout", nav, true) },
+        bottomBar = {
+            Surface(color = Ink, shadowElevation = 12.dp) {
+                Column(Modifier.navigationBarsPadding().padding(16.dp)) {
+                    if (state == PaymentState.FAILED) {
+                        Button(
+                            onClick = { vm.resetPaymentState() },
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Danger, contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Try Again")
+                        }
+                    } else {
+                        BookingButton(
+                            text = if (state == PaymentState.PROCESSING) "Authorizing Payment…" else "Proceed to Pay • ${formatInr(draft.total)}",
+                            onClick = {
+                                vm.processDemoPayment(selectedUpiApp) {
+                                    nav.navigate(Routes.CONFIRMATION) {
+                                        popUpTo(Routes.PAYMENT) { inclusive = true }
+                                    }
+                                }
+                            },
+                            enabled = state != PaymentState.PROCESSING,
+                            icon = Icons.Default.Lock
+                        )
+                    }
+                }
+            }
+        },
+        containerColor = Ink
+    ) { padding ->
+        Column(
+            Modifier
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Realistic Gateway Header Banner
+            Surface(
+                color = Charcoal,
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, Line)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(40.dp).background(PulseLavender.copy(alpha = 0.15f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.VerifiedUser, null, tint = PulseLavender, modifier = Modifier.size(22.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("256-Bit Encrypted Demo Gateway", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                        Text("Simulated transaction · No real money debited", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
+            // Order & Turf Summary
+            Surface(
+                color = Charcoal,
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Line)
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(turf?.name ?: "Sports Arena", fontWeight = FontWeight.ExtraBold, fontFamily = ManropeUi, style = MaterialTheme.typography.titleMedium)
+                            Text("${draft.date} • ${draft.timeLabel}", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                            Text("${draft.slots.size} hour duration", color = PulseLavender, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("AMOUNT DUE", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                            Text(formatInr(draft.total), color = PulseLavender, fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+
+            // Failure State Banner if payment failed
+            if (state == PaymentState.FAILED) {
+                Surface(
+                    color = Danger.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Danger.copy(alpha = 0.4f))
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.ErrorOutline, null, tint = Danger, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Payment Failed", fontWeight = FontWeight.Bold, color = Danger)
+                            Text(errorMsg ?: "Your demo payment could not be processed.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+
+            // Payment Mode Selector: UPI Apps vs QR Code
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
+                    onClick = { paymentTab = "UPI_APPS" },
+                    modifier = Modifier.weight(1f),
+                    color = if (paymentTab == "UPI_APPS") PulsePurple.copy(alpha = 0.25f) else Charcoal,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (paymentTab == "UPI_APPS") PulseLavender else Line)
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.PhoneAndroid, null, tint = if (paymentTab == "UPI_APPS") PulseLavender else TextMuted, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("UPI Apps", fontWeight = FontWeight.Bold, color = if (paymentTab == "UPI_APPS") PulseLavender else TextPrimary)
+                    }
+                }
+                Surface(
+                    onClick = { paymentTab = "QR_CODE" },
+                    modifier = Modifier.weight(1f),
+                    color = if (paymentTab == "QR_CODE") PulsePurple.copy(alpha = 0.25f) else Charcoal,
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.dp, if (paymentTab == "QR_CODE") PulseLavender else Line)
+                ) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.QrCode, null, tint = if (paymentTab == "QR_CODE") PulseLavender else TextMuted, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Scan UPI QR", fontWeight = FontWeight.Bold, color = if (paymentTab == "QR_CODE") PulseLavender else TextPrimary)
+                    }
+                }
+            }
+
+            if (paymentTab == "UPI_APPS") {
+                Text("SELECT UPI PAYMENT APP", color = TextMuted, style = MaterialTheme.typography.labelMedium)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    upiApps.forEach { app ->
+                        Surface(
+                            onClick = { selectedUpiApp = app },
+                            color = if (selectedUpiApp == app) PulseLavender.copy(alpha = 0.12f) else Charcoal,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, if (selectedUpiApp == app) PulseLavender else Line)
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AccountBalanceWallet, null, tint = if (selectedUpiApp == app) PulseLavender else TextMuted)
+                                Spacer(Modifier.width(12.dp))
+                                Text(app, Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                RadioButton(
+                                    selected = selectedUpiApp == app,
+                                    onClick = { selectedUpiApp = app },
+                                    colors = RadioButtonDefaults.colors(selectedColor = PulseLavender)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Surface(
+                    color = Charcoal,
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, Line),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Scan using any UPI App", fontWeight = FontWeight.Bold)
+                        Text("GPay, PhonePe, Paytm, BHIM or Mobile Banking", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(4.dp))
+                        DemoQrCode(Modifier.size(200.dp))
+                        Spacer(Modifier.height(4.dp))
+                        Text("UPI ID: bookmyturf@demo", color = PulseLavender, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            // Developer Testing Simulation Options (subtle expandable card)
+            Surface(
+                color = Steel.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Line),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Developer Simulation Mode", color = TextMuted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f))
+                        TextButton(
+                            onClick = { showDevControls = !showDevControls },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(if (showDevControls) "Hide" else "Configure", style = MaterialTheme.typography.labelSmall, color = PulseLavender)
+                        }
+                    }
+                    if (showDevControls) {
+                        Text("Choose simulated payment outcome for testing:", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DemoPaymentMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = currentMode == mode,
+                                    onClick = { vm.setDemoPaymentMode(mode) },
+                                    label = { Text(mode.name, style = MaterialTheme.typography.labelSmall) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = if (mode == DemoPaymentMode.SUCCESS) PulsePurple else Danger.copy(alpha = 0.5f),
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
-        if (state == PaymentState.PROCESSING) Box(Modifier.fillMaxSize().background(Ink.copy(.86f)), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(color = PulseLavender); Spacer(Modifier.height(18.dp)); Text("VERIFYING DEMO PAYMENT", style = MaterialTheme.typography.labelLarge); Text("No real transaction is being made", color = TextMuted) } }
+
+        // Realistic Gateway Processing Screen Overlay (2.5s simulated transition)
+        if (state == PaymentState.PROCESSING) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Ink.copy(alpha = 0.94f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(60.dp),
+                        color = PulseLavender,
+                        strokeWidth = 4.dp
+                    )
+                    Text("Processing Payment…", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+                    Text("Communicating with UPI Banking Server", style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                    Text("Please do not press back or close the app.", style = MaterialTheme.typography.bodySmall, color = TextMuted, textAlign = TextAlign.Center)
+                    Surface(
+                        color = Charcoal,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Line)
+                    ) {
+                        Text("DEMO SIMULATION · 256-BIT ENCRYPTION", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = PulseLavender, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable private fun DemoQrCode(modifier: Modifier = Modifier) {
     val pattern = remember { List(25) { y -> List(25) { x -> ((x * 13 + y * 7 + x * y) % 5 < 2) || (x < 7 && y < 7) || (x > 17 && y < 7) || (x < 7 && y > 17) } } }
-    Box(modifier.background(Color.White).padding(10.dp)) { Canvas(Modifier.fillMaxSize()) { val cell = size.width / 25f; pattern.forEachIndexed { y, row -> row.forEachIndexed { x, on -> if (on) drawRect(Ink, androidx.compose.ui.geometry.Offset(x * cell, y * cell), androidx.compose.ui.geometry.Size(cell + .5f, cell + .5f)) } } } }
+    Box(modifier.background(Color.White).padding(10.dp)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val cell = size.width / 25f
+            pattern.forEachIndexed { y, row ->
+                row.forEachIndexed { x, on ->
+                    if (on) drawRect(Ink, androidx.compose.ui.geometry.Offset(x * cell, y * cell), androidx.compose.ui.geometry.Size(cell + .5f, cell + .5f))
+                }
+            }
+        }
+    }
 }
 
 @Composable
 fun ConfirmationScreen(vm: AppViewModel, nav: NavController) {
-    val booking by vm.lastBooking; val b = booking ?: Booking("BMT-20260910-4821", "strike", "Strike Arena", "10 September 2026", "07:00 PM – 08:00 PM", 1, 967.60, BookingStatus.CONFIRMED)
-    var appeared by remember { mutableStateOf(false) }; LaunchedEffect(Unit) { appeared = true }
-    val scale by animateFloatAsState(if (appeared) 1f else .2f, spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "success"); val context = LocalContext.current
-    Column(Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).statusBarsPadding().navigationBarsPadding().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(24.dp)); Box(Modifier.size(92.dp).scale(scale).background(PulseLavender.copy(.12f), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Default.CheckCircle, null, Modifier.size(68.dp), tint = PulseLavender) }
-        Spacer(Modifier.height(18.dp)); Text("Booking confirmed", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center); Text("Your arena is locked in.", color = TextMuted)
-        Spacer(Modifier.height(22.dp)); StatusBadge(b.id)
-        Spacer(Modifier.height(20.dp)); Surface(Modifier.fillMaxWidth(), color = Charcoal, shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Line)) { Column(Modifier.padding(18.dp)) { SummaryRow("Turf", b.turfName); SummaryRow("Date", b.date); SummaryRow("Time", b.time); SummaryRow("Duration", "${b.durationHours} hour"); SummaryRow("Amount paid", formatInr(b.amount), true); Spacer(Modifier.height(12.dp)); Box(Modifier.align(Alignment.CenterHorizontally)) { DemoQrCode(Modifier.size(130.dp)) }; Text("SHOW AT VENUE", Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp), style = MaterialTheme.typography.labelMedium, color = TextMuted) } }
-        Spacer(Modifier.height(18.dp)); BookingButton("View Booking", { nav.navigate(Routes.BOOKINGS) { popUpTo(Routes.USER) } })
-        Spacer(Modifier.height(8.dp)); OutlinedButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI).putExtra(CalendarContract.Events.TITLE, "Game at ${b.turfName}").putExtra(CalendarContract.Events.DESCRIPTION, "BookMyTurf ${b.id}")) } }, Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Line)) { Icon(Icons.Default.CalendarMonth, null); Spacer(Modifier.width(8.dp)); Text("ADD TO CALENDAR") }
-        TextButton(onClick = { vm.showMessage("Map directions preview opened in demo mode.") }) { Icon(Icons.Default.Directions, null, tint = PulseLavender); Spacer(Modifier.width(8.dp)); Text("GET DIRECTIONS", color = PulseLavender) }
+    val booking by vm.lastBooking
+    val b = booking ?: Booking("BMT-20260910-4821", "strike", "Strike Arena", "10 September 2026", "07:00 PM – 08:00 PM", 1, 967.60, BookingStatus.CONFIRMED, transactionId = "BMT-DEMO-8F72A91C")
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val scale by animateFloatAsState(if (appeared) 1f else .2f, spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "success")
+    val context = LocalContext.current
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Ink)
+            .verticalScroll(rememberScrollState())
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(20.dp))
+        Box(
+            Modifier.size(92.dp).scale(scale).background(PulseLavender.copy(alpha = 0.15f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.CheckCircle, null, Modifier.size(64.dp), tint = PulseLavender)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("Payment Successful!", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
+        Text("Your turf slot is locked in and confirmed.", color = TextMuted)
+        Spacer(Modifier.height(18.dp))
+
+        // Demo Transaction & Booking Identification Card
+        Surface(
+            Modifier.fillMaxWidth(),
+            color = Charcoal,
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, PulseLavender.copy(alpha = 0.4f))
+        ) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SummaryRow("Booking ID", b.id)
+                if (b.transactionId.isNotBlank()) {
+                    SummaryRow("Transaction ID", b.transactionId)
+                }
+                SummaryRow("Payment Status", "${b.paymentStatus} (${b.paymentMethod})")
+                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Line)
+                SummaryRow("Turf", b.turfName)
+                SummaryRow("Date", b.date)
+                SummaryRow("Time", b.time)
+                SummaryRow("Duration", "${b.durationHours} hour${if (b.durationHours == 1) "" else "s"}")
+                SummaryRow("Amount paid", formatInr(b.amount), true)
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.align(Alignment.CenterHorizontally)) { DemoQrCode(Modifier.size(120.dp)) }
+                Text("SHOW AT VENUE ENTRY", Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp), style = MaterialTheme.typography.labelMedium, color = TextMuted)
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        BookingButton("View In My Bookings", { nav.navigate(Routes.BOOKINGS) { popUpTo(Routes.USER) } })
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Intent.ACTION_INSERT)
+                            .setData(CalendarContract.Events.CONTENT_URI)
+                            .putExtra(CalendarContract.Events.TITLE, "Game at ${b.turfName}")
+                            .putExtra(CalendarContract.Events.DESCRIPTION, "BookMyTurf Booking ${b.id}\nTx ID: ${b.transactionId}")
+                    )
+                }
+            },
+            Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, Line)
+        ) {
+            Icon(Icons.Default.CalendarMonth, null)
+            Spacer(Modifier.width(8.dp))
+            Text("ADD TO CALENDAR")
+        }
+        TextButton(onClick = { vm.showMessage("Map directions preview opened.") }) {
+            Icon(Icons.Default.Directions, null, tint = PulseLavender)
+            Spacer(Modifier.width(8.dp))
+            Text("GET DIRECTIONS", color = PulseLavender)
+        }
     }
 }
 

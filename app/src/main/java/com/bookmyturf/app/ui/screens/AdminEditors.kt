@@ -8,8 +8,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bookmyturf.app.data.*
@@ -34,7 +39,7 @@ internal fun TurfEditor(initial: Turf, vm: AppViewModel, close: () -> Unit) {
     var closing by remember { mutableStateOf(initial.closingHour.toString()) }
     var indoor by remember { mutableStateOf(initial.isIndoor) }
     var sports by remember { mutableStateOf(initial.sports) }
-    var photos by remember { mutableStateOf(initial.photoUris) }
+    var photos by remember { mutableStateOf(initial.photoUris.ifEmpty { initial.imageUrls }) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var photoIndex by remember { mutableIntStateOf(0) }
@@ -65,17 +70,104 @@ internal fun TurfEditor(initial: Turf, vm: AppViewModel, close: () -> Unit) {
                 Sport.entries.forEach { sport -> Tag(sport.label, sport in sports) { sports = if (sport in sports) sports - sport else sports + sport } }
             }
             Row { Text("Indoor venue", Modifier.weight(1f)); Switch(indoor, { indoor = it }, enabled = !busy) }
-            Text("Venue photos · up to 4 · first photo is the cover")
-            photos.forEachIndexed { index, _ ->
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    VenuePhoto(initial.copy(photoUris = photos), Modifier.size(72.dp), index)
-                    TextButton(enabled = !busy && CloudFeatures.photoUploadsEnabled, onClick = { photoIndex = index; picker.launch(arrayOf("image/*")) }) { Text("Replace") }
-                    TextButton(enabled = !busy, onClick = { photos = photos.filterIndexed { i, _ -> i != index } }) { Text("Remove") }
-                    if (index > 0) TextButton(enabled = !busy, onClick = { photos = listOf(photos[index]) + photos.filterIndexed { i, _ -> i != index } }) { Text("Cover") }
+
+            Text("Venue photos · 4 cover photos · first is cover", fontWeight = FontWeight.Bold)
+            Text("Remote HTTPS URLs stored in Firestore (no Cloud Storage billing required).", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+
+            photos.forEachIndexed { index, url ->
+                Surface(
+                    color = Steel,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, if (index == 0) PulseLavender.copy(alpha = 0.6f) else Line),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (index == 0) "★ COVER PHOTO (SLOT 1)" else "PHOTO SLOT #${index + 1}",
+                                color = if (index == 0) PulseLavender else TextMuted,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (index > 0) {
+                                TextButton(onClick = {
+                                    photos = listOf(photos[index]) + photos.filterIndexed { i, _ -> i != index }
+                                }) { Text("Make Cover", color = PulseLavender) }
+                            }
+                            TextButton(onClick = {
+                                photos = photos.filterIndexed { i, _ -> i != index }
+                            }) { Text("Remove", color = Danger) }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            VenuePhoto(initial.copy(photoUris = photos), Modifier.size(80.dp, 60.dp).clip(RoundedCornerShape(8.dp)), index)
+                            OutlinedTextField(
+                                value = url,
+                                onValueChange = { newUrl ->
+                                    photos = photos.toMutableList().apply { set(index, newUrl) }
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("Image URL") },
+                                singleLine = true,
+                                enabled = !busy
+                            )
+                        }
+                    }
                 }
             }
-            if (!CloudFeatures.photoUploadsEnabled) Text(CloudFeatures.photosUnavailable, color = TextMuted)
-            if (photos.size < 4) OutlinedButton(enabled = !busy && CloudFeatures.photoUploadsEnabled, onClick = { photoIndex = photos.size; picker.launch(arrayOf("image/*")) }) { Text("Add photo") }
+
+            if (photos.size < 4) {
+                var newUrlInput by remember { mutableStateOf("") }
+                Surface(
+                    color = Steel.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Line),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Add image URL · Slot ${photos.size + 1} of 4", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = newUrlInput,
+                                onValueChange = { newUrlInput = it },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("Enter HTTPS Image URL") },
+                                placeholder = { Text("https://example.com/turf.jpg") },
+                                singleLine = true,
+                                enabled = !busy
+                            )
+                            Button(
+                                onClick = {
+                                    if (newUrlInput.isNotBlank()) {
+                                        photos = photos + newUrlInput.trim()
+                                        newUrlInput = ""
+                                    }
+                                },
+                                enabled = !busy && newUrlInput.isNotBlank(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = PulsePurple, contentColor = Color.White)
+                            ) { Text("Add") }
+                        }
+                        Text("Quick Presets (public HTTPS sports photos):", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TurfImagePresets.items.forEach { (title, url) ->
+                                OutlinedButton(
+                                    onClick = { photos = photos + url },
+                                    enabled = !busy && photos.size < 4 && url !in photos,
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                ) { Text(title, style = MaterialTheme.typography.labelSmall) }
+                            }
+                            OutlinedButton(
+                                onClick = { photoIndex = photos.size; picker.launch(arrayOf("image/*")) },
+                                enabled = !busy && photos.size < 4,
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) { Text("Device Gallery", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
+                }
+            }
             error?.let { Text(it, color = Danger) }
             PrimaryButton(if (busy) "Saving…" else "Save turf", enabled = !busy, onClick = {
                 val parsedPrice = price.toIntOrNull(); val parsedDistance = distance.toDoubleOrNull(); val parsedRating = rating.toDoubleOrNull()

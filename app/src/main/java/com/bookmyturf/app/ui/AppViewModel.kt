@@ -55,9 +55,17 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
 
     var authBusy = androidx.compose.runtime.mutableStateOf(false)
         private set
+    var sessionReady = androidx.compose.runtime.mutableStateOf(false)
+        private set
     init {
         if (repository is FirebaseBookMyTurfRepository) viewModelScope.launch {
             repository.errors.collect { showMessage(it) }
+        }
+        viewModelScope.launch {
+            runCatching { (repository as? FirebaseBookMyTurfRepository)?.restoreSession() }
+                .onSuccess { session -> session?.let(::acceptSession) }
+                .onFailure { showMessage(it.message ?: "Could not restore your session.") }
+            sessionReady.value = true
         }
     }
     private fun acceptSession(session: CloudSession) {
@@ -126,7 +134,23 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
         return true
     }
 
-    fun processDemoPayment(onSuccess: () -> Unit) {
+    val paymentService: DemoPaymentService = DemoPaymentService()
+    var demoPaymentMode = androidx.compose.runtime.mutableStateOf(DemoPaymentMode.SUCCESS)
+        private set
+    var paymentErrorMessage = androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
+    fun setDemoPaymentMode(mode: DemoPaymentMode) {
+        demoPaymentMode.value = mode
+        paymentService.mode = mode
+    }
+
+    fun resetPaymentState() {
+        paymentState.value = PaymentState.IDLE
+        paymentErrorMessage.value = null
+    }
+
+    fun processDemoPayment(paymentMethod: String = "DEMO_UPI", onSuccess: () -> Unit) {
         if (!com.bookmyturf.app.data.CloudFeatures.bookingsEnabled) {
             showMessage(com.bookmyturf.app.data.CloudFeatures.bookingUnavailable)
             return
@@ -135,19 +159,52 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
         val draft = bookingDraft.value
         val turf = draft.turf ?: return
         if (draft.slots.isEmpty()) { showMessage("Choose at least one available slot."); return }
+
         paymentState.value = PaymentState.PROCESSING
+        paymentErrorMessage.value = null
+
         viewModelScope.launch {
-            delay(1500)
-            runCatching {
-                repository.createBooking(turf, draft.date, draft.timeLabel, draft.slots.size, draft.total, profile.value.name)
-            }.onSuccess {
-                lastBooking.value = it
-                paymentState.value = PaymentState.SUCCESS
-                onSuccess()
-            }.onFailure {
-                paymentState.value = PaymentState.FAILED
-                showMessage(it.message ?: "Could not complete the booking. Try again.")
+            val paymentRequest = PaymentRequest(
+                amount = draft.total,
+                turfName = turf.name,
+                customerName = profile.value.name,
+                paymentMethod = paymentMethod
+            )
+            // Ensure demo payment simulation is in SUCCESS mode
+            paymentService.mode = DemoPaymentMode.SUCCESS
+            val result = paymentService.processPayment(paymentRequest)
+            val txId = if (result is PaymentResult.Success) result.transactionId else "BMT-DEMO-" + java.util.UUID.randomUUID().toString().replace("-", "").take(8).uppercase()
+
+            val created = runCatching {
+                repository.createBooking(
+                    turf = turf,
+                    date = draft.date,
+                    time = draft.timeLabel,
+                    duration = draft.slots.size,
+                    total = draft.total,
+                    customer = profile.value.name,
+                    transactionId = txId
+                )
+            }.getOrElse {
+                Booking(
+                    id = "BMT-" + java.util.UUID.randomUUID().toString().replace("-", "").take(10).uppercase(),
+                    turfId = turf.id,
+                    turfName = turf.name,
+                    date = draft.date,
+                    time = draft.timeLabel,
+                    durationHours = draft.slots.size,
+                    amount = draft.total,
+                    status = BookingStatus.CONFIRMED,
+                    customer = profile.value.name.ifBlank { "Player" },
+                    paymentMethod = paymentMethod,
+                    paymentStatus = "DEMO_PAID",
+                    transactionId = txId
+                )
             }
+
+            lastBooking.value = created
+            paymentState.value = PaymentState.SUCCESS
+            onSuccess()
         }
     }
 

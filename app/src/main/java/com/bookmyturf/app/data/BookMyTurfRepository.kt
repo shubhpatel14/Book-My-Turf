@@ -10,7 +10,7 @@ interface BookMyTurfRepository {
     suspend fun updateOperations(change: (OperationsState) -> OperationsState)
     suspend fun markNotificationsRead()
     suspend fun toggleFavorite(turfId: String)
-    suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String = "Arjun Patel"): Booking
+    suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String = "Arjun Patel", transactionId: String = ""): Booking
     suspend fun cancelBooking(bookingId: String)
     suspend fun setTurfActive(turfId: String, active: Boolean)
     suspend fun deleteTurf(turfId: String)

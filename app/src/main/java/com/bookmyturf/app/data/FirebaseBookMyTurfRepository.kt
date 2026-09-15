@@ -53,6 +53,11 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
         auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
         return try { openSession() } catch (e: Exception) { signOut(); throw e }
     }
+    suspend fun restoreSession(): CloudSession? {
+        if (auth.currentUser == null) return null
+        clearSession()
+        return try { openSession() } catch (e: Exception) { signOut(); throw e }
+    }
     suspend fun register(profile: UserProfile, password: String): CloudSession {
         clearSession()
         val user = auth.createUserWithEmailAndPassword(profile.email.trim(), password).await().user ?: error("Account creation failed.")
@@ -157,41 +162,186 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
             db.batch().apply { list.forEach { update(db.collection("notifications").document(it.id), "unread", false) } }.commit().await()
         }
     }
-    override suspend fun createBooking(turf: Turf, date: String, time: String, duration: Int, total: Double, customer: String): Booking {
+    override suspend fun createBooking(
+        turf: Turf,
+        date: String,
+        time: String,
+        duration: Int,
+        total: Double,
+        customer: String,
+        transactionId: String
+    ): Booking {
         check(CloudFeatures.bookingsEnabled) { CloudFeatures.bookingUnavailable }
-        val key = "${turf.id}|$date|$time|$duration|$total"
-        val requestId = pendingBooking?.takeIf { it.first == key }?.second ?: UUID.randomUUID().toString().also { pendingBooking = key to it }
-        val result = functions.getHttpsCallable("reserveDemoBooking").call(mapOf("requestId" to requestId, "turfId" to turf.id, "day" to bookingDate(date).toString(), "startHour" to bookingStart(time).hour, "duration" to duration, "expectedTotal" to total)).await()
-        @Suppress("UNCHECKED_CAST") val data = result.data as? Map<String, Any> ?: error("Invalid booking response.")
-        val booking = bookingFrom(data.text("id"), data)
+        val uid = auth.currentUser?.uid ?: error("Sign in before booking.")
+        val dayStr = bookingDate(date).toString()
+        val startHour = bookingStart(time).hour
+        val hours = (0 until duration).map { startHour + it }
+        val slotIds = hours.map { "${turf.id}_${dayStr}_$it" }
+        val generatedBookingId = "BMT-" + UUID.randomUUID().toString().replace("-", "").take(10).uppercase()
+        val effectiveTxId = transactionId.ifBlank { "BMT-DEMO-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase() }
+        val customerName = customer.ifBlank { auth.currentUser?.displayName ?: "Player" }
+
+        val createdBooking = Booking(
+            id = generatedBookingId,
+            turfId = turf.id,
+            turfName = turf.name,
+            date = date,
+            time = time,
+            durationHours = duration,
+            amount = total,
+            status = BookingStatus.CONFIRMED,
+            customer = customerName,
+            paymentMethod = "DEMO_UPI",
+            paymentStatus = "DEMO_PAID",
+            transactionId = effectiveTxId
+        )
+
+        // One atomic commit prevents partial bookings and double reservation races.
+        db.runTransaction { tx ->
+            val bookingMap = mapOf(
+                "id" to generatedBookingId,
+                "userId" to uid,
+                "turfId" to turf.id,
+                "turfName" to turf.name,
+                "date" to date,
+                "day" to dayStr,
+                "time" to time,
+                "startHour" to startHour,
+                "durationHours" to duration,
+                "amount" to total,
+                "status" to "CONFIRMED",
+                "customer" to customerName,
+                "paymentMethod" to "DEMO_UPI",
+                "paymentStatus" to "DEMO_PAID",
+                "transactionId" to effectiveTxId,
+                "slotIds" to slotIds,
+                "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+            )
+            val turfDoc = tx.get(db.collection("turfs").document(turf.id))
+            check(turfDoc.exists() && turfDoc.getBoolean("active") == true) { "This turf is not available." }
+            val settingsDoc = tx.get(db.document("config/public"))
+            check(!settingsDoc.exists() || settingsDoc.getBoolean("acceptBookings") != false) { "New bookings are currently paused." }
+            val reservationDocs = slotIds.map { tx.get(db.collection("reservations").document(it)) }
+            check(reservationDocs.none { it.exists() }) { "Sorry, this slot was just booked by another user." }
+            val slotDocs = slotIds.map { tx.get(db.collection("slots").document(it)) }
+            check(slotDocs.none { it.exists() && it.getString("state") == "BLOCKED" }) { "One of these slots is blocked." }
+
+            tx.set(db.collection("bookings").document(generatedBookingId), bookingMap)
+
+            for ((i, key) in slotIds.withIndex()) {
+                val hourTime = java.time.LocalTime.of(hours[i], 0).format(slotTimeFormat)
+                tx.set(db.collection("reservations").document(key),
+                    mapOf(
+                        "bookingId" to generatedBookingId,
+                        "turfId" to turf.id,
+                        "day" to dayStr,
+                        "date" to date,
+                        "time" to hourTime,
+                        "price" to (slotDocs[i].getLong("price")?.toInt() ?: turf.pricePerHour)
+                    )
+                )
+            }
+
+            tx.set(db.collection("notifications").document(generatedBookingId),
+                mapOf(
+                    "userId" to uid,
+                    "title" to "Booking confirmed",
+                    "message" to "${turf.name} · $date · $time",
+                    "time" to "Just now",
+                    "unread" to true,
+                    "type" to "booking"
+                )
+            )
+            Unit
+        }.await()
+
+        // Always update local memory state so booking appears immediately in UI
+        _bookings.value = (listOf(createdBooking) + _bookings.value).distinctBy { it.id }
+
+        // Also register booked slots locally so the UI marks them as booked immediately
+        val dayKey = "${turf.id}|$date"
+        val newBookedSlots = hours.map { h ->
+            val hourTime = java.time.LocalTime.of(h, 0).format(slotTimeFormat)
+            TurfSlot(hourTime, turf.pricePerHour, SlotState.BOOKED)
+        }
+        val existingForDay = reservations[dayKey].orEmpty()
+        reservations = reservations + (dayKey to (existingForDay + newBookedSlots).distinctBy { it.time })
+        publishSlots()
+
+        // Also add confirmed notification locally
+        val notification = AppNotification(
+            id = generatedBookingId,
+            title = "Booking confirmed",
+            message = "${turf.name} · $date · $time",
+            time = "Just now",
+            unread = true,
+            type = "booking"
+        )
+        _notifications.value = listOf(notification) + _notifications.value
+
         pendingBooking = null
-        return booking
+        return createdBooking
     }
+
     override suspend fun cancelBooking(bookingId: String) {
-        check(CloudFeatures.bookingsEnabled) { CloudFeatures.bookingUnavailable }
-        functions.getHttpsCallable("cancelBooking").call(mapOf("bookingId" to bookingId)).await()
+        val uid = auth.currentUser?.uid ?: error("Sign in first.")
+        try {
+            db.runTransaction { tx ->
+                val ref = db.collection("bookings").document(bookingId)
+                val doc = tx.get(ref)
+                if (!doc.exists()) return@runTransaction
+                val owner = doc.getString("userId")
+                if (owner != uid && !isAdmin) return@runTransaction
+                if (doc.getString("status") == "CANCELLED") return@runTransaction
+                tx.update(
+                    ref,
+                    mapOf(
+                        "status" to "CANCELLED",
+                        "cancelledAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                    )
+                )
+                @Suppress("UNCHECKED_CAST")
+                val slotIds = doc.get("slotIds") as? List<String> ?: emptyList()
+                slotIds.forEach { key ->
+                    tx.delete(db.collection("reservations").document(key))
+                }
+            }.await()
+        } catch (e: Exception) {
+            android.util.Log.w("BookMyTurf", "Firestore cancel sync: ${e.message}")
+        }
+        _bookings.value = _bookings.value.map {
+            if (it.id == bookingId) it.copy(status = BookingStatus.CANCELLED) else it
+        }
     }
-    override suspend fun setTurfActive(turfId: String, active: Boolean) { requireAdmin(); db.collection("turfs").document(turfId).update("active", active).await() }
-    override suspend fun deleteTurf(turfId: String) { requireAdmin(); db.collection("turfs").document(turfId).delete().await() }
+
+    override suspend fun setTurfActive(turfId: String, active: Boolean) {
+        requireAdmin()
+        db.collection("turfs").document(turfId).update("active", active).await()
+    }
+
+    override suspend fun deleteTurf(turfId: String) {
+        requireAdmin()
+        db.collection("turfs").document(turfId).delete().await()
+    }
+
     override suspend fun upsertTurf(turf: Turf) {
         requireAdmin()
-        val photos = turf.photoUris.map { source ->
-            if (source.startsWith("gs://")) source else {
-                check(CloudFeatures.photoUploadsEnabled) { CloudFeatures.photosUnavailable }
-                check(source.startsWith("file://") || source.startsWith("content://")) { "Choose a photo from the photo picker." }
-                val ref = storage.reference.child("turf-images/${turf.id}/${UUID.randomUUID()}.jpg")
-                ref.putFile(Uri.parse(source), com.google.firebase.storage.StorageMetadata.Builder().setContentType("image/jpeg").build()).await()
-                "gs://${ref.bucket}/${ref.path}"
-            }
-        }
+        val photos = turf.photoUris.ifEmpty { turf.imageUrls }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .take(4)
+
         db.collection("turfs").document(turf.id).set(mapOf(
             "name" to turf.name, "area" to turf.area, "city" to turf.city, "sports" to turf.sports.map { it.name },
             "pricePerHour" to turf.pricePerHour, "rating" to turf.rating, "distanceKm" to turf.distanceKm,
             "description" to turf.description, "facilities" to turf.facilities, "isIndoor" to turf.isIndoor,
-            "active" to turf.active, "visualSeed" to turf.visualSeed, "photoUris" to photos,
+            "active" to turf.active, "visualSeed" to turf.visualSeed,
+            "photoUris" to photos,
+            "imageUrls" to photos,
             "openingHour" to turf.openingHour, "closingHour" to turf.closingHour
         )).await()
     }
+
     override suspend fun updateOperations(change: (OperationsState) -> OperationsState) {
         requireAdmin()
         val before = _operations.value
@@ -213,15 +363,35 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
         }
         batch.commit().await()
     }
+
     private fun requireAdmin() { check(isAdmin && auth.currentUser != null) { "Administrator access is required." } }
 
     companion object {
-        fun emptyOperations() = OperationsState(offers = emptyList(), reviews = emptyList(), profiles = emptyList(), settings = mapOf("acceptBookings" to false))
+        fun emptyOperations() = OperationsState(offers = emptyList(), reviews = emptyList(), profiles = emptyList(), settings = mapOf("acceptBookings" to true))
         private fun Map<String, Any>.text(key: String) = this[key] as? String ?: ""
         private fun Map<String, Any>.number(key: String) = this[key] as? Number ?: 0
         private fun Map<String, Any>.strings(key: String) = (this[key] as? List<*>)?.filterIsInstance<String>().orEmpty()
         private fun profileFrom(d: Map<String, Any>) = UserProfile(d.text("name"), d.text("phone"), d.text("email"), d.text("location"))
-        private fun turfFrom(id: String, d: Map<String, Any>) = Turf(id, d.text("name"), d.text("city"), d.text("area"), d.strings("sports").mapNotNull { runCatching { Sport.valueOf(it) }.getOrNull() }, d.number("pricePerHour").toInt(), d.number("rating").toDouble(), d.number("distanceKm").toDouble(), d.text("description"), d.strings("facilities"), isIndoor = d["isIndoor"] == true, active = d["active"] == true, visualSeed = d.number("visualSeed").toInt(), photoUris = d.strings("photoUris"), openingHour = d.number("openingHour").toInt(), closingHour = d.number("closingHour").toInt())
-        private fun bookingFrom(id: String, d: Map<String, Any>) = Booking(id, d.text("turfId"), d.text("turfName"), d.text("date"), d.text("time"), d.number("durationHours").toInt(), d.number("amount").toDouble(), BookingStatus.valueOf(d.text("status")), d.text("customer"))
+        private fun turfFrom(id: String, d: Map<String, Any>): Turf {
+            val urls = d.strings("imageUrls").ifEmpty { d.strings("photoUris") }
+            return Turf(
+                id, d.text("name"), d.text("city"), d.text("area"),
+                d.strings("sports").mapNotNull { runCatching { Sport.valueOf(it) }.getOrNull() },
+                d.number("pricePerHour").toInt(), d.number("rating").toDouble(), d.number("distanceKm").toDouble(),
+                d.text("description"), d.strings("facilities"),
+                isIndoor = d["isIndoor"] == true, active = d["active"] == true, visualSeed = d.number("visualSeed").toInt(),
+                photoUris = urls,
+                openingHour = d.number("openingHour").toInt(), closingHour = d.number("closingHour").toInt()
+            )
+        }
+        private fun bookingFrom(id: String, d: Map<String, Any>) = Booking(
+            id, d.text("turfId"), d.text("turfName"), d.text("date"), d.text("time"),
+            d.number("durationHours").toInt(), d.number("amount").toDouble(),
+            runCatching { BookingStatus.valueOf(d.text("status")) }.getOrDefault(BookingStatus.CONFIRMED),
+            d.text("customer").ifBlank { "Player" },
+            paymentMethod = d.text("paymentMethod").ifBlank { "DEMO_UPI" },
+            paymentStatus = d.text("paymentStatus").ifBlank { "DEMO_PAID" },
+            transactionId = d.text("transactionId")
+        )
     }
 }

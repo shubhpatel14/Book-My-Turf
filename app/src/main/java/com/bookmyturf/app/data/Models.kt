@@ -29,7 +29,9 @@ data class Turf(
     val photoUris: List<String> = emptyList(),
     val openingHour: Int = 6,
     val closingHour: Int = 23
-) : java.io.Serializable
+) : java.io.Serializable {
+    val imageUrls: List<String> get() = photoUris
+}
 
 @Immutable
 enum class SlotState { AVAILABLE, BOOKED, BLOCKED }
@@ -48,7 +50,10 @@ data class Booking(
     val durationHours: Int,
     val amount: Double,
     val status: BookingStatus,
-    val customer: String = "Arjun Patel"
+    val customer: String = "Arjun Patel",
+    val paymentMethod: String = "DEMO_UPI",
+    val paymentStatus: String = "DEMO_PAID",
+    val transactionId: String = ""
 ) : java.io.Serializable
 
 @Immutable

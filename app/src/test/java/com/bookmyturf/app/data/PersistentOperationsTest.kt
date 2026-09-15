@@ -68,4 +68,57 @@ class PersistentOperationsTest {
             assertEquals(original, repo.turfs.first().first())
         } finally { directory.deleteRecursively() }
     }
+
+    @Test fun demoPaymentServiceGeneratesTransactionIdAndRespectsSimulationModes() = runBlocking {
+        val paymentService = DemoPaymentService()
+        val request = PaymentRequest(800.0, "Strike Arena", "Rohan")
+
+        // Test SUCCESS mode
+        paymentService.mode = DemoPaymentMode.SUCCESS
+        val successResult = paymentService.processPayment(request)
+        assertTrue(successResult is PaymentResult.Success)
+        val success = successResult as PaymentResult.Success
+        assertTrue(success.transactionId.startsWith("BMT-DEMO-"))
+        assertEquals(8, success.transactionId.removePrefix("BMT-DEMO-").length)
+        assertEquals(800.0, success.amount, 0.01)
+
+        // Test FAILED mode
+        paymentService.mode = DemoPaymentMode.FAILED
+        val failedResult = paymentService.processPayment(request)
+        assertTrue(failedResult is PaymentResult.Failed)
+
+        // Test CANCELLED mode
+        paymentService.mode = DemoPaymentMode.CANCELLED
+        val cancelledResult = paymentService.processPayment(request)
+        assertTrue(cancelledResult is PaymentResult.Cancelled)
+    }
+
+    @Test fun bookingSavesDemoPaymentDetailsAndTurfImageUrls() = runBlocking {
+        val repo = DemoBookMyTurfRepository()
+        val turf = repo.turfs.first().first().copy(
+            photoUris = listOf(
+                "https://example.com/turf1.jpg",
+                "https://example.com/turf2.jpg",
+                "https://example.com/turf3.jpg",
+                "https://example.com/turf4.jpg"
+            )
+        )
+        repo.upsertTurf(turf)
+        val savedTurf = repo.turfs.first().first { it.id == turf.id }
+        assertEquals(4, savedTurf.imageUrls.size)
+        assertEquals("https://example.com/turf1.jpg", savedTurf.imageUrls[0])
+
+        val booking = repo.createBooking(
+            savedTurf,
+            tomorrow,
+            "07:00 PM - 08:00 PM",
+            1,
+            967.6,
+            customer = "Rohan",
+            transactionId = "BMT-DEMO-A1B2C3D4"
+        )
+        assertEquals("BMT-DEMO-A1B2C3D4", booking.transactionId)
+        assertEquals("DEMO_UPI", booking.paymentMethod)
+        assertEquals("DEMO_PAID", booking.paymentStatus)
+    }
 }

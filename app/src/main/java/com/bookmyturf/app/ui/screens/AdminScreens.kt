@@ -140,7 +140,28 @@ fun AdminDashboardScreen(vm: AppViewModel, nav: NavController, onLogout: () -> U
     }
 }
 
-@Composable private fun CompactAdminBooking(b: Booking, action: Boolean = false, onAction: () -> Unit = {}) { Surface(color = Charcoal, shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Line)) { Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(b.id, color = Lime, style = MaterialTheme.typography.labelMedium); Text("${b.customer} • ${b.turfName}", fontWeight = FontWeight.Bold); Text("${b.date} • ${b.time}", color = TextMuted) }; Column(horizontalAlignment = Alignment.End) { Text(formatInr(b.amount), fontWeight = FontWeight.Black); StatusBadge(b.status.name, when(b.status){ BookingStatus.CONFIRMED->Lime; BookingStatus.COMPLETED->Color(0xFF55B8FF); BookingStatus.CANCELLED->Danger }); if(action) TextButton(onAction) { Text(if(b.status==BookingStatus.CONFIRMED) "CANCEL" else "VIEW", color = if(b.status==BookingStatus.CONFIRMED) Danger else Lime) } } } } }
+@Composable private fun CompactAdminBooking(b: Booking, action: Boolean = false, onAction: () -> Unit = {}) {
+    Surface(color = Charcoal, shape = RoundedCornerShape(7.dp), border = BorderStroke(1.dp, Line)) {
+        Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(b.id, color = Lime, style = MaterialTheme.typography.labelMedium)
+                    if (b.transactionId.isNotBlank()) {
+                        Text(" · Tx: ${b.transactionId}", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Text("${b.customer} • ${b.turfName}", fontWeight = FontWeight.Bold)
+                Text("${b.date} • ${b.time}", color = TextMuted)
+                Text("${b.paymentStatus} (${b.paymentMethod})", color = Lime.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(formatInr(b.amount), fontWeight = FontWeight.Black)
+                StatusBadge(b.status.name, when(b.status){ BookingStatus.CONFIRMED->Lime; BookingStatus.COMPLETED->Color(0xFF55B8FF); BookingStatus.CANCELLED->Danger })
+                if(action) TextButton(onAction) { Text(if(b.status==BookingStatus.CONFIRMED) "CANCEL" else "VIEW", color = if(b.status==BookingStatus.CONFIRMED) Danger else Lime) }
+            }
+        }
+    }
+}
 
 @Composable private fun UserManagement(vm: AppViewModel) {
     val operations by vm.operations.collectAsStateWithLifecycle()

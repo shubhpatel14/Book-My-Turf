@@ -8,6 +8,13 @@ service cloud.firestore {
     }
     function admin() { return enabled() && request.auth.token.get('admin', false) == true; }
     function own(uid) { return signedIn() && request.auth.uid == uid; }
+    function reservedAfter(slotId, bookingId, turfId, day) {
+      let reservation = getAfter(/databases/$(database)/documents/reservations/$(slotId));
+      return reservation != null
+        && reservation.data.bookingId == bookingId
+        && reservation.data.turfId == turfId
+        && reservation.data.day == day;
+    }
     function validProfile(uid) {
       return request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'location', 'disabled'])
         && request.resource.data.uid == uid
@@ -32,13 +39,14 @@ service cloud.firestore {
     match /turfs/{id} {
       allow read: if admin() || (enabled() && resource.data.active == true);
       allow create, update: if admin()
-        && request.resource.data.keys().hasOnly(['name','area','city','sports','pricePerHour','rating','distanceKm','description','facilities','isIndoor','active','visualSeed','photoUris','openingHour','closingHour'])
+        && request.resource.data.keys().hasOnly(['name','area','city','sports','pricePerHour','rating','distanceKm','description','facilities','isIndoor','active','visualSeed','photoUris','imageUrls','openingHour','closingHour'])
         && request.resource.data.name is string && request.resource.data.name.size() > 0
         && request.resource.data.pricePerHour is int && request.resource.data.pricePerHour > 0 && request.resource.data.pricePerHour <= 1000000
         && request.resource.data.rating is number && request.resource.data.rating >= 0 && request.resource.data.rating <= 5
         && request.resource.data.distanceKm is number && request.resource.data.distanceKm >= 0
         && request.resource.data.sports is list && request.resource.data.sports.size() > 0
         && request.resource.data.photoUris is list && request.resource.data.photoUris.size() <= 4
+        && (!('imageUrls' in request.resource.data) || (request.resource.data.imageUrls is list && request.resource.data.imageUrls.size() <= 4))
         && request.resource.data.openingHour is int && request.resource.data.openingHour >= 0
         && request.resource.data.closingHour is int && request.resource.data.closingHour <= 23
         && request.resource.data.closingHour > request.resource.data.openingHour
@@ -53,14 +61,46 @@ service cloud.firestore {
         && request.resource.data.state in ['AVAILABLE','BLOCKED'];
       allow delete: if admin();
     }
-    // No customer identity, booking IDs or private booking details are published here.
-    match /reservations/{id} { allow read: if enabled(); allow write: if false; }
+    match /reservations/{id} {
+      allow read: if enabled();
+      allow create: if enabled()
+        && !exists(/databases/$(database)/documents/reservations/$(id))
+        && request.resource.data.keys().hasOnly(['bookingId','turfId','day','date','time','price'])
+        && request.resource.data.price is int && request.resource.data.price > 0
+        && getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.userId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.slotIds.hasAny([id]);
+      allow delete: if admin() || (enabled()
+        && getAfter(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.userId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/bookings/$(resource.data.bookingId)).data.status == 'CANCELLED');
+      allow update: if false;
+    }
     match /bookings/{id} {
       allow read: if enabled() && (admin() || resource.data.userId == request.auth.uid);
-      allow write: if false; // Only trusted callable functions reserve/cancel slots.
+      allow create: if enabled()
+        && request.resource.data.keys().hasOnly(['id','userId','turfId','turfName','date','day','time','startHour','durationHours','amount','status','customer','paymentMethod','paymentStatus','transactionId','slotIds','createdAt'])
+        && request.resource.data.id == id && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'CONFIRMED'
+        && request.resource.data.paymentMethod == 'DEMO_UPI'
+        && request.resource.data.paymentStatus == 'DEMO_PAID'
+        && request.resource.data.transactionId is string && request.resource.data.transactionId.matches('BMT-DEMO-[A-Z0-9]{8}')
+        && request.resource.data.durationHours is int && request.resource.data.durationHours >= 1 && request.resource.data.durationHours <= 4
+        && request.resource.data.slotIds is list && request.resource.data.slotIds.size() == request.resource.data.durationHours
+        && request.resource.data.amount is number && request.resource.data.amount > 0
+        && reservedAfter(request.resource.data.slotIds[0], id, request.resource.data.turfId, request.resource.data.day)
+        && (request.resource.data.durationHours < 2 || reservedAfter(request.resource.data.slotIds[1], id, request.resource.data.turfId, request.resource.data.day))
+        && (request.resource.data.durationHours < 3 || reservedAfter(request.resource.data.slotIds[2], id, request.resource.data.turfId, request.resource.data.day))
+        && (request.resource.data.durationHours < 4 || reservedAfter(request.resource.data.slotIds[3], id, request.resource.data.turfId, request.resource.data.day));
+      allow update: if admin() || (enabled() && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt'])
+        && request.resource.data.status == 'CANCELLED');
+      allow delete: if admin();
     }
     match /notifications/{id} {
       allow read: if enabled() && resource.data.userId == request.auth.uid;
+      allow create: if enabled() && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['userId','title','message','time','unread','type'])
+        && request.resource.data.unread == true && request.resource.data.type == 'booking'
+        && getAfter(/databases/$(database)/documents/bookings/$(id)).data.userId == request.auth.uid;
       allow update: if enabled() && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unread'])
         && request.resource.data.unread == false;

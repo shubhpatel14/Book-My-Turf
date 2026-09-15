@@ -68,6 +68,8 @@ fun BookMyTurfRoot() {
     val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
     val snackbar = remember { SnackbarHostState() }
     val message by vm.snackbar
+    val sessionReady by vm.sessionReady
+    val restoredRole by vm.authRole
     LaunchedEffect(message) {
         if (message != null) { snackbar.showSnackbar(message!!); vm.clearSnackbar() }
     }
@@ -117,7 +119,14 @@ fun BookMyTurfRoot() {
                 }
             }
             ) {
-            composable(Routes.SPLASH) { SplashScreen { nav.navigate(Routes.ONBOARDING) { popUpTo(Routes.SPLASH) { inclusive = true } } } }
+            composable(Routes.SPLASH) { SplashScreen(sessionReady) {
+                val destination = when (restoredRole) {
+                    AuthRole.ADMIN -> Routes.ADMIN
+                    AuthRole.USER -> Routes.USER
+                    null -> Routes.ONBOARDING
+                }
+                nav.navigate(destination) { popUpTo(Routes.SPLASH) { inclusive = true } }
+            } }
             composable(Routes.ONBOARDING) { OnboardingScreen(onDone = { nav.navigate(Routes.LOGIN) { popUpTo(Routes.ONBOARDING) { inclusive = true } } }) }
             composable(Routes.LOGIN) { LoginScreen(vm, onUser = { nav.navigate(Routes.USER) { popUpTo(Routes.LOGIN) { inclusive = true } } }, onAdmin = { nav.navigate(Routes.ADMIN) { popUpTo(Routes.LOGIN) { inclusive = true } } }) }
             composable(Routes.REGISTER) { RegistrationScreen(vm, onBack = nav::popBackStack, onComplete = { nav.navigate(Routes.USER) { popUpTo(Routes.LOGIN) { inclusive = true } } }) }

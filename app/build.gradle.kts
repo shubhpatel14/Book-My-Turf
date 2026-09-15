@@ -86,6 +86,7 @@ dependencies {
     implementation("androidx.collection:collection:1.4.4")
     implementation("androidx.annotation:annotation:1.9.1")
     implementation("androidx.concurrent:concurrent-futures:1.2.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

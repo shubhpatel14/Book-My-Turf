@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs } = require('firebase/firestore');
+const { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, writeBatch, serverTimestamp } = require('firebase/firestore');
 const { getFirestore } = require('firebase-admin/firestore');
 const { reserveDemoBooking, cancelBooking } = require('./index');
 
@@ -26,11 +26,26 @@ async function main() {
     await assertSucceeds(getDocs(query(collection(alice, 'turfs'), where('active', '==', true))));
     await assertFails(updateDoc(doc(alice, 'turfs/strike'), { pricePerHour: 1 }));
     await assertSucceeds(updateDoc(doc(owner, 'turfs/strike'), { pricePerHour: 900 }));
-    await assertFails(setDoc(doc(alice, 'reservations/fake'), { time: '07:00 PM' }));
-    await assertFails(setDoc(doc(alice, 'bookings/fake'), { userId: 'alice', amount: 1, status: 'CONFIRMED' }));
-    await admin.doc('turfs/strike').update({ pricePerHour: 800 });
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
     const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(tomorrow);
+    await assertFails(setDoc(doc(alice, 'reservations/fake'), { time: '07:00 PM' }));
+    await assertFails(setDoc(doc(alice, 'bookings/fake'), { userId: 'alice', amount: 1, status: 'CONFIRMED' }));
+    const clientBookingId = 'BMT-CLIENT1234';
+    const clientSlotId = `strike_${day}_18`;
+    const clientBatch = writeBatch(alice);
+    clientBatch.set(doc(alice, `bookings/${clientBookingId}`), {
+      id: clientBookingId, userId: 'alice', turfId: 'strike', turfName: 'Strike', date: '16 September 2026', day,
+      time: '06:00 PM', startHour: 18, durationHours: 1, amount: 967.6, status: 'CONFIRMED', customer: 'alice',
+      paymentMethod: 'DEMO_UPI', paymentStatus: 'DEMO_PAID', transactionId: 'BMT-DEMO-1234ABCD', slotIds: [clientSlotId], createdAt: serverTimestamp()
+    });
+    clientBatch.set(doc(alice, `reservations/${clientSlotId}`), {
+      bookingId: clientBookingId, turfId: 'strike', day, date: '16 September 2026', time: '06:00 PM', price: 800
+    });
+    clientBatch.set(doc(alice, `notifications/${clientBookingId}`), {
+      userId: 'alice', title: 'Booking confirmed', message: 'Strike', time: 'Just now', unread: true, type: 'booking'
+    });
+    await assertSucceeds(clientBatch.commit());
+    await admin.doc('turfs/strike').update({ pricePerHour: 800 });
     const data = { requestId: '11111111-2222-3333-4444', turfId: 'strike', day, startHour: 19, duration: 1, expectedTotal: 967.6 };
     const request = (uid, body) => ({ auth: { uid, token: { email: `${uid}@example.com` } }, data: body });
     const results = await Promise.allSettled(['alice', 'bob'].map(uid => reserveDemoBooking.run(request(uid, data))));
