@@ -38,6 +38,7 @@ object Routes {
     const val USER = "user"
     const val EXPLORE = "explore"
     const val TURF = "turf/{id}"
+    const val TOURNAMENT = "tournament/{id}"
     const val SLOTS = "slots/{id}"
     const val SUMMARY = "summary"
     const val PAYMENT = "payment"
@@ -48,6 +49,7 @@ object Routes {
     const val PROFILE = "profile"
     const val ADMIN = "admin"
     fun turf(id: String) = "turf/$id"
+    fun tournament(id: String) = "tournament/$id"
     fun slots(id: String) = "slots/$id"
 }
 
@@ -133,6 +135,7 @@ fun BookMyTurfRoot() {
             composable(Routes.USER) { UserHomeScreen(vm, nav) }
             composable(Routes.EXPLORE) { ExploreScreen(vm, nav) }
             composable(Routes.TURF, arguments = listOf(navArgument("id") { type = NavType.StringType })) { TurfDetailsScreen(vm, it.arguments?.getString("id").orEmpty(), nav) }
+            composable(Routes.TOURNAMENT, arguments = listOf(navArgument("id") { type = NavType.StringType })) { TournamentDetailsScreen(vm, it.arguments?.getString("id").orEmpty(), nav) }
             composable(Routes.SLOTS, arguments = listOf(navArgument("id") { type = NavType.StringType })) { SlotBookingScreen(vm, it.arguments?.getString("id").orEmpty(), nav) }
             composable(Routes.SUMMARY) { BookingSummaryScreen(vm, nav) }
             composable(Routes.PAYMENT) { PaymentScreen(vm, nav) }

@@ -19,6 +19,11 @@ private data class StoreSnapshot(
 
 /** One atomic, persistent source for all screens. No network backend is configured. */
 class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurfRepository {
+    private val tournamentState = MutableStateFlow(sampleTournaments())
+    private val registrationState = MutableStateFlow<List<TournamentRegistration>>(emptyList())
+    override val tournaments = tournamentState
+    override val tournamentRegistrations = registrationState
+    override val tournamentSyncUnavailable = MutableStateFlow(false)
     private val initial = if (storeFile?.exists() == true)
         ObjectInputStream(storeFile.inputStream().buffered()).use { it.readObject() as StoreSnapshot }
         else StoreSnapshot(seedTurfs(), seedBookings(), seedNotifications())
@@ -28,6 +33,24 @@ class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurf
     override val bookings = state.map { it.bookings }.distinctUntilChanged()
     override val notifications = state.map { it.notifications }.distinctUntilChanged()
     override val operations = state.map { it.operations }.distinctUntilChanged()
+
+    override suspend fun upsertTournament(tournament: Tournament) {
+        validateTournament(tournament)
+        tournamentState.value = (tournamentState.value.filterNot { it.id == tournament.id } + tournament).sortedBy { it.date }
+    }
+    override suspend fun registerTournament(tournament: Tournament, teamName: String, captainName: String, captainPhone: String, transactionId: String): TournamentRegistration {
+        val current = tournamentState.value.firstOrNull { it.id == tournament.id } ?: error("Tournament unavailable.")
+        validateTournamentRegistration(current, teamName, captainName, captainPhone)
+        require(registrationState.value.count { it.tournamentId == current.id && it.status == "CONFIRMED" } < current.maxTeams) { "This tournament is full." }
+        val registration = TournamentRegistration(UUID.randomUUID().toString(), current.id, current.name, current.sport, teamName.trim(), captainName.trim(), captainPhone.trim(), current.entryFee, transactionId)
+        registrationState.value = listOf(registration) + registrationState.value
+        return registration
+    }
+    override suspend fun setTournamentActive(id: String, active: Boolean) { tournamentState.value = tournamentState.value.map { if (it.id == id) it.copy(active = active) else it } }
+    override suspend fun setTournamentRegistrationStatus(id: String, status: String) {
+        require(status in listOf("CONFIRMED", "CANCELLED"))
+        registrationState.value = registrationState.value.map { if (it.id == id) it.copy(status = status) else it }
+    }
 
     private suspend fun mutate(change: (StoreSnapshot) -> StoreSnapshot) = mutex.withLock {
         val next = change(state.value)

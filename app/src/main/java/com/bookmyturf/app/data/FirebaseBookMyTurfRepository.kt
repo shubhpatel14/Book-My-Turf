@@ -31,10 +31,16 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
     private val _bookings = MutableStateFlow<List<Booking>>(emptyList())
     private val _notifications = MutableStateFlow<List<AppNotification>>(emptyList())
     private val _operations = MutableStateFlow(emptyOperations())
+    private val _tournaments = MutableStateFlow<List<Tournament>>(emptyList())
+    private val _tournamentRegistrations = MutableStateFlow<List<TournamentRegistration>>(emptyList())
+    private val _tournamentSyncUnavailable = MutableStateFlow(false)
     override val turfs = _turfs.asStateFlow()
     override val bookings = _bookings.asStateFlow()
     override val notifications = _notifications.asStateFlow()
     override val operations = _operations.asStateFlow()
+    override val tournaments = _tournaments.asStateFlow()
+    override val tournamentRegistrations = _tournamentRegistrations.asStateFlow()
+    override val tournamentSyncUnavailable = _tournamentSyncUnavailable.asStateFlow()
     private var favorites = emptySet<String>()
     private var venues = emptyList<Turf>()
     private var overrides = emptyMap<String, List<TurfSlot>>()
@@ -75,6 +81,8 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
         isAdmin = false; usersByEmail = emptyMap(); pendingBooking = null
         venues = emptyList(); favorites = emptySet(); overrides = emptyMap(); reservations = emptyMap()
         _turfs.value = emptyList(); _bookings.value = emptyList(); _notifications.value = emptyList(); _operations.value = emptyOperations()
+        _tournaments.value = emptyList(); _tournamentRegistrations.value = emptyList()
+        _tournamentSyncUnavailable.value = false
     }
     private suspend fun openSession(): CloudSession {
         val user = auth.currentUser ?: error("Sign in first.")
@@ -94,6 +102,12 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
         listenCollection(ref.collection("favorites")) { favorites = it.map { pair -> pair.first }.toSet(); publishTurfs() }
         listenCollection(db.collection("bookings").let { if (isAdmin) it else it.whereEqualTo("userId", user.uid) }) {
             _bookings.value = it.map { pair -> bookingFrom(pair.first, pair.second) }.sortedByDescending { it.id }
+        }
+        listenCollection(db.collection("tournaments").let { if (isAdmin) it else it.whereEqualTo("active", true) }, { _tournamentSyncUnavailable.value = true }) {
+            _tournaments.value = it.map { (id, data) -> tournamentFrom(id, data) }.sortedBy { tournament -> tournament.date }
+        }
+        listenCollection(db.collection("tournamentRegistrations").let { if (isAdmin) it else it.whereEqualTo("userId", user.uid) }, { _tournamentSyncUnavailable.value = true }) {
+            _tournamentRegistrations.value = it.map { (id, data) -> tournamentRegistrationFrom(id, data) }
         }
         listenCollection(db.collection("notifications").whereEqualTo("userId", user.uid)) {
             _notifications.value = it.map { (id, d) -> AppNotification(id, d.text("title"), d.text("message"), d.text("time"), d["unread"] == true, d.text("type")) }
@@ -118,7 +132,7 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
             usersByEmail = records.associate { it.second.text("email").lowercase() to it.first }
             _operations.value = _operations.value.copy(profiles = records.map { profileFrom(it.second) }, disabledEmails = records.filter { it.second["disabled"] == true }.map { it.second.text("email").lowercase() }.toSet())
         }
-        if (isAdmin) listenCollection(db.collection("users"), receiveProfiles)
+        if (isAdmin) listenCollection(db.collection("users"), onData = receiveProfiles)
         else listeners += ref.addSnapshotListener { snapshot, error ->
             if (auth.currentUser?.uid == user.uid) {
                 if (error != null) report(error)
@@ -132,11 +146,11 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
         }
         return CloudSession(profile, isAdmin)
     }
-    private fun listenCollection(query: com.google.firebase.firestore.Query, onData: (List<Pair<String, Map<String, Any>>>) -> Unit) {
+    private fun listenCollection(query: com.google.firebase.firestore.Query, onError: (Exception) -> Unit = ::report, onData: (List<Pair<String, Map<String, Any>>>) -> Unit) {
         val uid = auth.currentUser?.uid
         listeners += query.addSnapshotListener { snapshot, error ->
             if (uid != auth.currentUser?.uid) return@addSnapshotListener
-            if (error != null) report(error)
+            if (error != null) onError(error)
             else runCatching { onData(snapshot?.documents.orEmpty().map { it.id to it.data.orEmpty() }) }.onFailure(::report)
         }
     }
@@ -364,6 +378,78 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
         batch.commit().await()
     }
 
+    override suspend fun upsertTournament(tournament: Tournament) {
+        requireAdmin()
+        validateTournament(tournament)
+        val id = tournament.id.ifBlank { UUID.randomUUID().toString() }
+        val ref = db.collection("tournaments").document(id)
+        val previous = ref.get().await()
+        val registeredTeams = previous.getLong("registeredTeams") ?: 0L
+        require(tournament.maxTeams >= registeredTeams) { "Maximum teams cannot be below existing registrations." }
+        ref.set(mapOf(
+            "name" to tournament.name.trim(), "sport" to tournament.sport.name,
+            "city" to tournament.city.trim(), "venue" to tournament.venue.trim(),
+            "date" to tournament.date, "registrationDeadline" to tournament.registrationDeadline,
+            "teamSize" to tournament.teamSize, "maxTeams" to tournament.maxTeams,
+            "entryFee" to tournament.entryFee, "prizePool" to tournament.prizePool,
+            "description" to tournament.description.trim(), "rules" to tournament.rules.trim(),
+            "active" to tournament.active, "registeredTeams" to registeredTeams,
+            "imageUrls" to tournament.imageUrls
+        )).await()
+    }
+
+    override suspend fun registerTournament(tournament: Tournament, teamName: String, captainName: String, captainPhone: String, transactionId: String): TournamentRegistration {
+        val uid = auth.currentUser?.uid ?: error("Sign in first.")
+        validateTournamentRegistration(tournament, teamName, captainName, captainPhone)
+        require(transactionId.matches(Regex("BMT-DEMO-[A-Z0-9]{8}"))) { "Complete the demo payment first." }
+        val tournamentRef = db.collection("tournaments").document(tournament.id)
+        val registrationRef = db.collection("tournamentRegistrations").document("${uid}_${tournament.id}")
+        val registration = db.runTransaction { tx ->
+            val current = tx.get(tournamentRef)
+            val latest = tournamentFrom(current.id, current.data ?: error("Tournament unavailable."))
+            validateTournamentRegistration(latest, teamName, captainName, captainPhone)
+            val registered = current.getLong("registeredTeams") ?: 0L
+            check(registered < latest.maxTeams) { "This tournament is full." }
+            val saved = TournamentRegistration(registrationRef.id, latest.id, latest.name, latest.sport, teamName.trim(), captainName.trim(), captainPhone.trim(), latest.entryFee, transactionId, userId = uid)
+            tx.update(tournamentRef, "registeredTeams", registered + 1)
+            tx.set(registrationRef, mapOf(
+                "userId" to uid, "tournamentId" to latest.id, "tournamentName" to latest.name,
+                "sport" to latest.sport.name, "teamName" to saved.teamName,
+                "captainName" to saved.captainName, "captainPhone" to saved.captainPhone,
+                "amount" to saved.amount,
+                "transactionId" to transactionId, "paymentStatus" to "DEMO_PAID",
+                "status" to "CONFIRMED", "createdAt" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+            ))
+            saved
+        }.await()
+        return registration
+    }
+
+    override suspend fun setTournamentActive(id: String, active: Boolean) {
+        requireAdmin()
+        db.collection("tournaments").document(id).update("active", active).await()
+    }
+
+    override suspend fun setTournamentRegistrationStatus(id: String, status: String) {
+        requireAdmin()
+        require(status in listOf("CONFIRMED", "CANCELLED"))
+        val registrationRef = db.collection("tournamentRegistrations").document(id)
+        db.runTransaction { tx ->
+            val registration = tx.get(registrationRef)
+            check(registration.exists()) { "Registration not found." }
+            val oldStatus = registration.getString("status") ?: "CONFIRMED"
+            if (oldStatus != status) {
+                val tournamentRef = db.collection("tournaments").document(registration.getString("tournamentId") ?: error("Tournament missing."))
+                val tournament = tx.get(tournamentRef)
+                val current = tournament.getLong("registeredTeams") ?: 0L
+                val next = current + if (status == "CONFIRMED") 1 else -1
+                check(next >= 0 && next <= (tournament.getLong("maxTeams") ?: 0L)) { "Tournament capacity has changed." }
+                tx.update(tournamentRef, "registeredTeams", next)
+                tx.update(registrationRef, "status", status)
+            }
+        }.await()
+    }
+
     private fun requireAdmin() { check(isAdmin && auth.currentUser != null) { "Administrator access is required." } }
 
     companion object {
@@ -392,6 +478,20 @@ class FirebaseBookMyTurfRepository : BookMyTurfRepository {
             paymentMethod = d.text("paymentMethod").ifBlank { "DEMO_UPI" },
             paymentStatus = d.text("paymentStatus").ifBlank { "DEMO_PAID" },
             transactionId = d.text("transactionId")
+        )
+        private fun tournamentFrom(id: String, d: Map<String, Any>) = Tournament(
+            id, d.text("name"), runCatching { Sport.valueOf(d.text("sport")) }.getOrDefault(Sport.FOOTBALL),
+            d.text("city"), d.text("venue"), d.text("date"), d.text("registrationDeadline"),
+            d.number("teamSize").toInt(), d.number("maxTeams").toInt(), d.number("entryFee").toInt(),
+            d.number("prizePool").toInt(), d.text("description"), d.text("rules"), d["active"] == true,
+            d.strings("imageUrls")
+        )
+        private fun tournamentRegistrationFrom(id: String, d: Map<String, Any>) = TournamentRegistration(
+            id, d.text("tournamentId"), d.text("tournamentName"),
+            runCatching { Sport.valueOf(d.text("sport")) }.getOrDefault(Sport.FOOTBALL),
+            d.text("teamName"), d.text("captainName"), d.text("captainPhone"),
+            d.number("amount").toInt(), d.text("transactionId"), d.text("paymentStatus"),
+            d.text("status"), d.text("userId")
         )
     }
 }

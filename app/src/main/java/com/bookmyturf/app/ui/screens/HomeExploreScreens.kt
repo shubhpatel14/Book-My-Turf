@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
@@ -508,6 +509,8 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
     val operations by vm.operations.collectAsStateWithLifecycle()
     val offer = operations.offers.firstOrNull { it.active }
     val turfs by vm.turfs.collectAsStateWithLifecycle()
+    val tournaments by vm.tournaments.collectAsStateWithLifecycle()
+    val tournamentSyncUnavailable by vm.tournamentSyncUnavailable.collectAsStateWithLifecycle()
     val profile by vm.profile
     val notifications by vm.notifications.collectAsStateWithLifecycle()
     var selectedSport by rememberSaveable { mutableStateOf<Sport?>(null) }
@@ -557,6 +560,10 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
         }.sortedBy { it.distanceKm }
     }
     val locationLabel = selectedCity?.let { "$it, India" } ?: "Choose location"
+    val recommendedTournaments = tournaments.filter { tournament ->
+        tournament.active && (selectedSport == null || tournament.sport == selectedSport) &&
+            (selectedCity == null || tournament.city.equals(selectedCity, ignoreCase = true))
+    }.take(2)
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -566,7 +573,18 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
             verticalArrangement = Arrangement.spacedBy(15.dp)
         ) {
             item(key = "header") {
-                DistrictHomeTopBar(locationLabel, notifications.count { it.unread }, nav) { showLocationPicker = true }
+                Column {
+                    DistrictHomeTopBar(locationLabel, notifications.count { it.unread }, nav) { showLocationPicker = true }
+                    Box(Modifier.fillMaxWidth().height(18.dp), contentAlignment = Alignment.BottomCenter) {
+                        Image(
+                            painter = painterResource(R.drawable.bookmyturf_wordmark),
+                            contentDescription = "BookMyTurf",
+                            modifier = Modifier.width(136.dp).aspectRatio(2095f / 472f).offset(y = (-3).dp),
+                            contentScale = ContentScale.Fit,
+                            colorFilter = ColorFilter.tint(Color.White)
+                        )
+                    }
+                }
             }
             item(key = "search") {
                 Surface(
@@ -656,6 +674,26 @@ fun UserHomeScreen(vm: AppViewModel, nav: NavController) {
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
                     }
+                }
+            }
+            item(key = "tournament-title") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Tournaments for you", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
+                        Text("Bring your team. Play for the prize.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { vm.exploreContent.value = "Tournaments"; nav.navigate(Routes.EXPLORE) }) { Text("SEE ALL", color = PulseLavender) }
+                }
+            }
+            if (recommendedTournaments.isEmpty()) item(key = "no-tournaments") {
+                Text(if (tournamentSyncUnavailable) "Tournament listings are temporarily unavailable." else "No upcoming tournaments in this area yet.", Modifier.padding(horizontal = 16.dp), color = TextMuted)
+            }
+            items(recommendedTournaments.chunked(2), key = { row -> "tournaments-${row.joinToString("-") { it.id }}" }) { row ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { tournament ->
+                        HomeTournamentPosterCard(tournament, { nav.navigate(Routes.tournament(tournament.id)) }, Modifier.weight(1f))
+                    }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }

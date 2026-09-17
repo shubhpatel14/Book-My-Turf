@@ -39,6 +39,12 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
     val bookings: StateFlow<List<Booking>> = repository.bookings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val operations = repository.operations.stateIn(viewModelScope, SharingStarted.Eagerly, FirebaseBookMyTurfRepository.emptyOperations())
     val notifications: StateFlow<List<AppNotification>> = repository.notifications.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val tournaments: StateFlow<List<Tournament>> = repository.tournaments.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val tournamentRegistrations: StateFlow<List<TournamentRegistration>> = repository.tournamentRegistrations.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val tournamentSyncUnavailable: StateFlow<Boolean> = repository.tournamentSyncUnavailable.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    var exploreContent = androidx.compose.runtime.mutableStateOf("All")
+    var tournamentPaymentBusy = androidx.compose.runtime.mutableStateOf(false)
+        private set
 
     var profile = androidx.compose.runtime.mutableStateOf(UserProfile())
         private set
@@ -237,6 +243,31 @@ class AppViewModel(private val repository: BookMyTurfRepository) : ViewModel() {
     fun setTurfActive(id: String, active: Boolean) = write { requireAdmin(); repository.setTurfActive(id, active) }
     fun deleteTurf(id: String) = write("Turf removed. Existing booking records are retained.") { requireAdmin(); repository.deleteTurf(id) }
     fun upsertTurf(turf: Turf, onSaved: () -> Unit = {}) = write("Turf saved.", onSaved) { requireAdmin(); repository.upsertTurf(turf) }
+    fun upsertTournament(tournament: Tournament, onSaved: () -> Unit = {}) = write("Tournament saved.", onSaved) { requireAdmin(); repository.upsertTournament(tournament) }
+    fun setTournamentActive(id: String, active: Boolean) = write { requireAdmin(); repository.setTournamentActive(id, active) }
+    fun setTournamentRegistrationStatus(id: String, status: String) = write("Registration updated.") { requireAdmin(); repository.setTournamentRegistrationStatus(id, status) }
+    fun registerTournament(tournament: Tournament, teamName: String, captainName: String, captainPhone: String, paymentMethod: String, onSaved: () -> Unit) {
+        if (tournamentPaymentBusy.value) return
+        val error = runCatching {
+            validateTournamentRegistration(tournament, teamName, captainName, captainPhone)
+            check(tournamentRegistrations.value.none { it.tournamentId == tournament.id }) { "You have already registered for this tournament." }
+        }.exceptionOrNull()
+        if (error != null) { showMessage(error.message ?: "Check team details."); return }
+        tournamentPaymentBusy.value = true
+        viewModelScope.launch {
+            runCatching {
+                val result = paymentService.processPayment(PaymentRequest(tournament.entryFee.toDouble(), tournament.name, captainName.trim(), paymentMethod))
+                val transactionId = when (result) {
+                    is PaymentResult.Success -> result.transactionId
+                    is PaymentResult.Failed -> error(result.reason)
+                    PaymentResult.Cancelled -> error("Payment cancelled. Your team was not registered.")
+                }
+                repository.registerTournament(tournament, teamName, captainName, captainPhone, transactionId)
+            }.onSuccess { showMessage("Team registered. Demo entry fee recorded."); onSaved() }
+                .onFailure { showMessage(it.message ?: "Could not register the team.") }
+            tournamentPaymentBusy.value = false
+        }
+    }
     private fun requireAdmin() { check(authRole.value == AuthRole.ADMIN) { "Sign in as admin to make changes." } }
     fun updateOperations(change: (OperationsState) -> OperationsState) = write("Changes saved.") {
         requireAdmin()

@@ -7,6 +7,13 @@ interface BookMyTurfRepository {
     val bookings: Flow<List<Booking>>
     val notifications: Flow<List<AppNotification>>
     val operations: Flow<OperationsState>
+    val tournaments: Flow<List<Tournament>>
+    val tournamentRegistrations: Flow<List<TournamentRegistration>>
+    val tournamentSyncUnavailable: Flow<Boolean>
+    suspend fun upsertTournament(tournament: Tournament)
+    suspend fun registerTournament(tournament: Tournament, teamName: String, captainName: String, captainPhone: String, transactionId: String): TournamentRegistration
+    suspend fun setTournamentActive(id: String, active: Boolean)
+    suspend fun setTournamentRegistrationStatus(id: String, status: String)
     suspend fun updateOperations(change: (OperationsState) -> OperationsState)
     suspend fun markNotificationsRead()
     suspend fun toggleFavorite(turfId: String)

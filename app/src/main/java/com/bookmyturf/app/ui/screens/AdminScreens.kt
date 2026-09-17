@@ -35,6 +35,7 @@ import kotlin.math.max
 
 private enum class AdminSection(val label: String, val icon: ImageVector) {
     DASHBOARD("Dashboard", Icons.Default.Dashboard), TURFS("Turfs", Icons.Default.Stadium),
+    TOURNAMENTS("Tournaments", Icons.Default.EmojiEvents),
     BOOKINGS("Bookings", Icons.Default.ConfirmationNumber), USERS("Users", Icons.Default.Groups),
     PAYMENTS("Payments", Icons.Default.Payments), OFFERS("Offers", Icons.Default.LocalOffer),
     REVIEWS("Reviews", Icons.Default.Star), SETTINGS("Settings", Icons.Default.Settings)
@@ -54,6 +55,7 @@ fun AdminDashboardScreen(vm: AppViewModel, nav: NavController, onLogout: () -> U
                 when (section) {
                     AdminSection.DASHBOARD -> AdminHome(vm)
                     AdminSection.TURFS -> TurfManagement(vm)
+                    AdminSection.TOURNAMENTS -> TournamentManagement(vm)
                     AdminSection.BOOKINGS -> BookingManagement(vm)
                     AdminSection.USERS -> UserManagement(vm)
                     AdminSection.PAYMENTS -> PaymentsDashboard(vm)

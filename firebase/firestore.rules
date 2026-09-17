@@ -109,6 +109,46 @@ service cloud.firestore {
       allow read: if admin() || (enabled() && resource.data.active == true);
       allow write: if admin();
     }
+    match /tournaments/{id} {
+      allow read: if admin() || (enabled() && resource.data.active == true);
+      allow create: if admin() && request.resource.data.keys().hasOnly([
+        'name','sport','city','venue','date','registrationDeadline','teamSize','maxTeams',
+        'entryFee','prizePool','description','rules','active','registeredTeams','imageUrls'])
+        && request.resource.data.registeredTeams == 0
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.sport in ['FOOTBALL','CRICKET','BADMINTON','BASKETBALL','TENNIS','VOLLEYBALL']
+        && request.resource.data.teamSize is int && request.resource.data.teamSize >= 1 && request.resource.data.teamSize <= 30
+        && request.resource.data.maxTeams is int && request.resource.data.maxTeams >= 2 && request.resource.data.maxTeams <= 128
+        && request.resource.data.entryFee is int && request.resource.data.entryFee >= 0
+        && request.resource.data.prizePool is int && request.resource.data.prizePool >= 0
+        && request.resource.data.imageUrls is list && request.resource.data.imageUrls.size() <= 4
+        && request.resource.data.active is bool;
+      allow update: if admin() || (enabled()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['registeredTeams'])
+        && resource.data.active == true
+        && resource.data.registeredTeams < resource.data.maxTeams
+        && request.resource.data.registeredTeams == resource.data.registeredTeams + 1
+        && !exists(/databases/$(database)/documents/tournamentRegistrations/$(request.auth.uid + '_' + id))
+        && getAfter(/databases/$(database)/documents/tournamentRegistrations/$(request.auth.uid + '_' + id)).data.userId == request.auth.uid);
+      allow delete: if admin();
+    }
+    match /tournamentRegistrations/{id} {
+      allow read: if admin() || (enabled() && resource.data.userId == request.auth.uid);
+      allow create: if enabled()
+        && request.resource.data.keys().hasOnly(['userId','tournamentId','tournamentName','sport','teamName','captainName','captainPhone','amount','transactionId','paymentStatus','status','createdAt'])
+        && request.resource.data.userId == request.auth.uid
+        && id == request.auth.uid + '_' + request.resource.data.tournamentId
+        && request.resource.data.teamName is string && request.resource.data.teamName.size() >= 2 && request.resource.data.teamName.size() <= 80
+        && request.resource.data.captainName is string && request.resource.data.captainName.size() >= 2
+        && request.resource.data.captainPhone is string && request.resource.data.captainPhone.size() >= 10
+        && request.resource.data.paymentStatus == 'DEMO_PAID'
+        && request.resource.data.status == 'CONFIRMED'
+        && request.resource.data.transactionId.matches('BMT-DEMO-[A-Z0-9]{8}')
+        && get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.active == true
+        && request.resource.data.amount == get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.entryFee
+        && getAfter(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.registeredTeams == get(/databases/$(database)/documents/tournaments/$(request.resource.data.tournamentId)).data.registeredTeams + 1;
+      allow update, delete: if admin();
+    }
     match /reviews/{id} {
       allow read: if admin() || (enabled() && resource.data.published == true);
       allow write: if admin();

@@ -48,6 +48,9 @@ import kotlinx.coroutines.isActive
 @Composable
 fun ExploreScreen(vm: AppViewModel, nav: NavController) {
     val turfs by vm.turfs.collectAsStateWithLifecycle()
+    val tournaments by vm.tournaments.collectAsStateWithLifecycle()
+    val tournamentSyncUnavailable by vm.tournamentSyncUnavailable.collectAsStateWithLifecycle()
+    val contentFilter by vm.exploreContent
     val profile by vm.profile
     var query by rememberSaveable { mutableStateOf("") }
     var sport by rememberSaveable { mutableStateOf<Sport?>(null) }
@@ -73,7 +76,14 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
             }
         }
     }
-    val resetFilters = { query = ""; sport = null; venue = "All venues"; sort = "Nearest" }
+    val filteredTournaments = remember(tournaments, query, sport) {
+        tournaments.filter { tournament ->
+            tournament.active && (sport == null || tournament.sport == sport) &&
+                (query.isBlank() || listOf(tournament.name, tournament.city, tournament.venue, tournament.sport.label).any { it.contains(query.trim(), true) })
+        }.sortedBy { it.date }
+    }
+    val resultCount = (if (contentFilter == "Tournaments") 0 else filtered.size) + (if (contentFilter == "Turfs") 0 else filteredTournaments.size)
+    val resetFilters = { query = ""; sport = null; venue = "All venues"; sort = "Nearest"; vm.exploreContent.value = "All" }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(Ink).statusBarsPadding(),
@@ -101,7 +111,7 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
             OutlinedTextField(
                 value = query, onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = { Text("Search turf, area or sport") },
+                placeholder = { Text("Search turfs, tournaments or sports") },
                 leadingIcon = { Icon(Icons.Default.Search, null, tint = TextMuted) },
                 trailingIcon = {
                     if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Clear search") }
@@ -112,6 +122,13 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
                     focusedContainerColor = Steel, unfocusedContainerColor = Steel, cursorColor = PulseLavender
                 )
             )
+        }
+        item(key = "explore-types") {
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf("All", "Turfs", "Tournaments")) { option ->
+                    ExploreChip(option, contentFilter == option) { vm.exploreContent.value = option }
+                }
+            }
         }
         item(key = "explore-sports") {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -125,8 +142,8 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
             Column(Modifier.padding(horizontal = 16.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(sport?.let { "${it.label} picks" } ?: "Curated for you", fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                        Text("${filtered.size} places · $sort", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                        Text(if (contentFilter == "Tournaments") "Tournaments for you" else sport?.let { "${it.label} picks" } ?: "Curated for you", fontFamily = ManropeUi, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                        Text("$resultCount results", color = TextMuted, style = MaterialTheme.typography.bodySmall)
                     }
                     OutlinedButton(onClick = { showFilters = true }, shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, Line), colors = ButtonDefaults.outlinedButtonColors(contentColor = PulseLavender)) {
                         Icon(Icons.Default.Tune, null, Modifier.size(18.dp))
@@ -134,21 +151,24 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
                         Text("Filters" + if (venue != "All venues" || sort != "Nearest") " •" else "")
                     }
                 }
-                if (venue != "All venues") {
+                if (contentFilter != "Tournaments" && venue != "All venues") {
                     Spacer(Modifier.height(10.dp))
                     ExploreChip("$venue ×", true) { venue = "All venues" }
                 }
             }
         }
-        if (filtered.isEmpty()) item(key = "explore-empty") {
+        if (resultCount == 0) item(key = "explore-empty") {
             Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.SearchOff, null, Modifier.size(44.dp), tint = PulseLavender)
-                Text("No matching turfs", fontFamily = ManropeUi, fontWeight = FontWeight.Bold)
-                Text("Try a different area, sport or venue type.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                Text(if (contentFilter == "Tournaments" && tournamentSyncUnavailable) "Tournaments unavailable" else "No matching results", fontFamily = ManropeUi, fontWeight = FontWeight.Bold)
+                Text(if (contentFilter == "Tournaments" && tournamentSyncUnavailable) "Tournament data cannot sync right now. Try again later." else "Try another search, sport or filter.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = resetFilters) { Text("Reset search & filters", color = PulseLavender) }
             }
         }
-        items(filtered, key = { it.id }) { turf ->
+        if (contentFilter != "Turfs") items(filteredTournaments, key = { "tournament-${it.id}" }) { tournament ->
+            TournamentCard(tournament, { nav.navigate(Routes.tournament(tournament.id)) }, Modifier.padding(horizontal = 16.dp))
+        }
+        if (contentFilter != "Tournaments") items(filtered, key = { it.id }) { turf ->
             val fullyVisible by remember(listState, turf.id, bottomObstruction) {
                 derivedStateOf {
                     val layout = listState.layoutInfo
@@ -165,16 +185,20 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
     if (showFilters) ModalBottomSheet(onDismissRequest = { showFilters = false }, containerColor = Charcoal) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp).navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Make it your game", fontFamily = ManropeUi, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.headlineSmall)
-            Text("Venue type", color = TextMuted)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Show", color = TextMuted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Turfs", "Tournaments").forEach { option -> ExploreChip(option, contentFilter == option) { vm.exploreContent.value = option } }
+            }
+            if (contentFilter != "Tournaments") Text("Venue type", color = TextMuted)
+            if (contentFilter != "Tournaments") Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("All venues", "Indoor", "Outdoor").forEach { option -> ExploreChip(option, venue == option) { venue = option } }
             }
-            Text("Sort by", color = TextMuted)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (contentFilter != "Tournaments") Text("Sort by", color = TextMuted)
+            if (contentFilter != "Tournaments") Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("Nearest", "Price: low to high", "Top rated").forEach { option -> ExploreChip(option, sort == option) { sort = option } }
             }
             Button(onClick = { showFilters = false }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = PulsePurple, contentColor = Color.White)) {
-                Text("Show ${filtered.size} places")
+                Text("Show $resultCount results")
             }
         }
     }
