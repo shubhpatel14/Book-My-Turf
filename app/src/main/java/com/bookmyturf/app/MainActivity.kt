@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -72,11 +73,19 @@ fun BookMyTurfRoot() {
     val message by vm.snackbar
     val sessionReady by vm.sessionReady
     val restoredRole by vm.authRole
+    val bottomBarScrollState = rememberBottomBarScrollState()
+    LaunchedEffect(currentRoute) {
+        bottomBarScrollState.expand()
+    }
     LaunchedEffect(message) {
         if (message != null) { snackbar.showSnackbar(message!!); vm.clearSnackbar() }
     }
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { _ ->
-        Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .nestedScroll(bottomBarScrollState.nestedScrollConnection)
+        ) {
             NavHost(
                 navController = nav,
                 startDestination = Routes.SPLASH,
@@ -147,7 +156,12 @@ fun BookMyTurfRoot() {
             composable(Routes.ADMIN) { com.bookmyturf.app.ui.theme.AdminAppearance { AdminDashboardScreen(vm, nav, onLogout = { vm.logout(); nav.navigate(Routes.LOGIN) { popUpTo(0) } }) } }
             }
             if (currentRoute in mainTabs) {
-                UserBottomBar(currentRoute!!, nav, Modifier.align(Alignment.BottomCenter))
+                UserBottomBar(
+                    current = currentRoute!!,
+                    nav = nav,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    scrollState = bottomBarScrollState
+                )
             }
         }
     }

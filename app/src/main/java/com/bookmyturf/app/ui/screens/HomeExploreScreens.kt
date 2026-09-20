@@ -63,6 +63,11 @@ import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.Locale
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.platform.LocalConfiguration
 
 private val heroHorizontalOverlay = Brush.horizontalGradient(
     listOf(Ink.copy(.97f), Ink.copy(.7f), Ink.copy(.08f), Color.Transparent)
@@ -91,10 +96,86 @@ private val homeSportOrder = listOf(
     Sport.BADMINTON,
     Sport.VOLLEYBALL
 )
+@Stable
+class BottomBarScrollState {
+    var isCompact by mutableStateOf(false)
+        private set
+
+    private var accumulatedDelta = 0f
+    private val collapseThreshold = 45f
+    private val expandThreshold = 25f
+
+    val nestedScrollConnection = object : NestedScrollConnection {
+        override fun onPreScroll(
+            available: Offset,
+            source: androidx.compose.ui.input.nestedscroll.NestedScrollSource
+        ): Offset {
+            if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+                val delta = available.y
+                if (delta < -1f) {
+                    if (accumulatedDelta > 0f) accumulatedDelta = 0f
+                    accumulatedDelta += -delta
+                    if (accumulatedDelta >= collapseThreshold) {
+                        isCompact = true
+                        accumulatedDelta = 0f
+                    }
+                } else if (delta > 1f) {
+                    if (accumulatedDelta < 0f) accumulatedDelta = 0f
+                    accumulatedDelta += delta
+                    if (accumulatedDelta >= expandThreshold) {
+                        isCompact = false
+                        accumulatedDelta = 0f
+                    }
+                }
+            }
+            return Offset.Zero
+        }
+
+        override fun onPostScroll(
+            consumed: Offset,
+            available: Offset,
+            source: androidx.compose.ui.input.nestedscroll.NestedScrollSource
+        ): Offset {
+            if (available.y > 20f && source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput) {
+                isCompact = false
+                accumulatedDelta = 0f
+            }
+            return Offset.Zero
+        }
+
+        override suspend fun onPreFling(available: Velocity): Velocity {
+            if (available.y < -400f) {
+                isCompact = true
+            } else if (available.y > 400f) {
+                isCompact = false
+            }
+            return Velocity.Zero
+        }
+    }
+
+    fun expand() {
+        isCompact = false
+        accumulatedDelta = 0f
+    }
+
+    fun collapse() {
+        isCompact = true
+        accumulatedDelta = 0f
+    }
+}
+
 @Composable
-fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modifier) {
-    // Animate before composing the destination's images and carousels. A new tap
-    // cancels this effect and retargets from the pill's current position.
+fun rememberBottomBarScrollState(): BottomBarScrollState {
+    return remember { BottomBarScrollState() }
+}
+
+@Composable
+fun UserBottomBar(
+    current: String,
+    nav: NavController,
+    modifier: Modifier = Modifier,
+    scrollState: BottomBarScrollState = rememberBottomBarScrollState()
+) {
     var requestedRoute by remember { mutableStateOf<String?>(null) }
     val selectedRoute = requestedRoute ?: current
     val selectedIndex = userNav.indexOfFirst { it.route == selectedRoute }.coerceAtLeast(0)
@@ -102,23 +183,24 @@ fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modi
     val itemMotions = remember {
         List(userNav.size) { index -> Animatable(if (index == selectedIndex) 1f else 0f) }
     }
+
     LaunchedEffect(selectedIndex, current) {
         val destination = requestedRoute
         coroutineScope {
-        launch {
-            tracker.animateTo(
-                selectedIndex.toFloat(),
-                tween(durationMillis = 240, easing = FastOutSlowInEasing)
-            )
-        }
-        itemMotions.forEachIndexed { index, motion ->
             launch {
-                motion.animateTo(
-                    if (index == selectedIndex) 1f else 0f,
-                    tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                tracker.animateTo(
+                    selectedIndex.toFloat(),
+                    tween(durationMillis = 240, easing = FastOutSlowInEasing)
                 )
             }
-        }
+            itemMotions.forEachIndexed { index, motion ->
+                launch {
+                    motion.animateTo(
+                        if (index == selectedIndex) 1f else 0f,
+                        tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                    )
+                }
+            }
         }
         if (destination != null && destination == requestedRoute) {
             if (destination != current) {
@@ -127,58 +209,126 @@ fun UserBottomBar(current: String, nav: NavController, modifier: Modifier = Modi
                     launchSingleTop = true
                     restoreState = true
                 }
+                scrollState.expand()
             }
             requestedRoute = null
         }
     }
-    BoxWithConstraints(
-        modifier.fillMaxWidth().navigationBarsPadding().height(86.dp),
+
+    val configuration = LocalConfiguration.current
+    val screenWidth = configuration.screenWidthDp.dp
+    val fullBarWidth = (screenWidth - 28.dp).coerceAtMost(360.dp)
+    val compactBarWidth = 216.dp.coerceAtMost(screenWidth - 32.dp)
+
+    val isCompact = scrollState.isCompact
+    val animSpecDp = spring<androidx.compose.ui.unit.Dp>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = 650f
+    )
+    val animSpecFloat = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = 650f
+    )
+
+    val barWidth by animateDpAsState(if (isCompact) compactBarWidth else fullBarWidth, animSpecDp, label = "dockW")
+    val barHeight by animateDpAsState(if (isCompact) 52.dp else 68.dp, animSpecDp, label = "dockH")
+    val barCornerRadius by animateDpAsState(if (isCompact) 26.dp else 34.dp, animSpecDp, label = "dockR")
+    val progress by animateFloatAsState(if (isCompact) 1f else 0f, animSpecFloat, label = "dockP")
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .height(86.dp),
         contentAlignment = Alignment.Center
     ) {
-        val barWidth = if (maxWidth > 390.dp) 360.dp else maxWidth - 28.dp
         Surface(
-            modifier = Modifier.width(barWidth).height(68.dp),
+            modifier = Modifier
+                .width(barWidth)
+                .height(barHeight)
+                .shadow(
+                    elevation = 14.dp,
+                    shape = RoundedCornerShape(barCornerRadius),
+                    spotColor = Color.Black.copy(alpha = 0.55f),
+                    ambientColor = Color.Black.copy(alpha = 0.35f)
+                ),
             color = Color(0xDC202228),
-            shape = RoundedCornerShape(34.dp),
-            border = BorderStroke(1.dp, Color.White.copy(.1f))
+            shape = RoundedCornerShape(barCornerRadius),
+            border = BorderStroke(1.dp, Color.White.copy(0.12f))
         ) {
-            BoxWithConstraints {
-                val itemWidth = maxWidth / userNav.size
-                val trackerWidth = itemWidth - 8.dp
+            Box(Modifier.fillMaxSize()) {
+                val itemWidth = barWidth / userNav.size
+                val trackerWidth = itemWidth - lerp(8.dp, 6.dp, progress)
+                val trackerHeight = lerp(60.dp, 44.dp, progress)
+                val trackerRadius = lerp(30.dp, 22.dp, progress)
+                val trackerX = lerp(4.dp, 3.dp, progress)
+                val trackerY = lerp(4.dp, 4.dp, progress)
+
+                // Active tab sliding indicator
                 Box(
-                    Modifier.offset(x = 4.dp, y = 4.dp).width(trackerWidth).height(60.dp)
-                        .graphicsLayer { translationX = itemWidth.toPx() * tracker.value }
-                        .background(Color.White.copy(.12f), RoundedCornerShape(30.dp))
-                        .border(1.dp, Color.White.copy(.12f), RoundedCornerShape(30.dp))
+                    Modifier
+                        .offset(x = trackerX, y = trackerY)
+                        .width(trackerWidth)
+                        .height(trackerHeight)
+                        .graphicsLayer {
+                            translationX = itemWidth.toPx() * tracker.value
+                        }
+                        .background(Color.White.copy(0.12f), RoundedCornerShape(trackerRadius))
+                        .border(1.dp, Color.White.copy(0.12f), RoundedCornerShape(trackerRadius))
                 )
+
+                // Navigation tab items
                 Row(Modifier.fillMaxSize()) {
                     userNav.forEachIndexed { index, item ->
                         val selected = item.route == selectedRoute
                         val motion = itemMotions[index]
                         val itemColor = androidx.compose.ui.graphics.lerp(TextMuted, Color.White, motion.value)
                         val tabInteraction = remember(item.route) { MutableInteractionSource() }
-                        Column(
-                            Modifier.weight(1f).fillMaxHeight().selectable(
-                                selected = selected,
-                                interactionSource = tabInteraction,
-                                indication = null,
-                                role = Role.Tab,
-                                onClick = {
-                                    if (!selected) requestedRoute = item.route
-                                }
-                            ).padding(vertical = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.SpaceBetween
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .selectable(
+                                    selected = selected,
+                                    interactionSource = tabInteraction,
+                                    indication = null,
+                                    role = Role.Tab,
+                                    onClick = {
+                                        if (!selected) {
+                                            requestedRoute = item.route
+                                        } else {
+                                            scrollState.expand()
+                                        }
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                item.icon, item.label, tint = itemColor,
-                                modifier = Modifier.size(24.dp).graphicsLayer {
-                                    val p = motion.value
-                                    scaleX = 1f + p * .07f
-                                    scaleY = scaleX
+                                imageVector = item.icon,
+                                contentDescription = item.label,
+                                tint = itemColor,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .graphicsLayer {
+                                        translationY = -8.5.dp.toPx() * (1f - progress)
+                                        val baseScale = 1f - 0.05f * progress
+                                        val selectedScale = 1f + motion.value * 0.07f
+                                        scaleX = baseScale * selectedScale
+                                        scaleY = baseScale * selectedScale
+                                    }
+                            )
+
+                            Text(
+                                text = item.label,
+                                color = itemColor,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                modifier = Modifier.graphicsLayer {
+                                    alpha = (1f - progress * 2.2f).coerceIn(0f, 1f)
+                                    translationY = 14.dp.toPx() + 6.dp.toPx() * progress
                                 }
                             )
-                            Text(item.label, color = itemColor, style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
