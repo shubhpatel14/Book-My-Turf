@@ -125,7 +125,7 @@ fun BookMyTurfRoot() {
                 val destination = when (restoredRole) {
                     AuthRole.ADMIN -> Routes.ADMIN
                     AuthRole.USER -> Routes.USER
-                    null -> Routes.ONBOARDING
+                    null -> Routes.LOGIN
                 }
                 nav.navigate(destination) { popUpTo(Routes.SPLASH) { inclusive = true } }
             } }
