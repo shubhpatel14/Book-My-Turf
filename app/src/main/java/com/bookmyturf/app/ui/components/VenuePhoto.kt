@@ -33,6 +33,73 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
+import android.graphics.drawable.BitmapDrawable
+import android.util.Base64
+import coil.ImageLoader
+import coil.decode.DataSource
+import coil.fetch.DrawableResult
+import coil.fetch.FetchResult
+import coil.fetch.Fetcher
+import coil.request.Options
+
+/**
+ * Normalizes user-entered image URLs:
+ * - Trims whitespace and surrounding quotes
+ * - Extracts direct image URLs from Google Images search redirection links (imgurl=...)
+ * - Ensures a scheme prefix (defaults to https:// if missing)
+ */
+fun cleanImageUrl(url: String): String {
+    var trimmed = url.trim().removeSurrounding("\"").removeSurrounding("'")
+    if (trimmed.isBlank()) return ""
+
+    if (trimmed.contains("google.") && trimmed.contains("/imgres") && trimmed.contains("imgurl=")) {
+        val extracted = runCatching {
+            val parsedUri = android.net.Uri.parse(trimmed)
+            parsedUri.getQueryParameter("imgurl")?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+        }.getOrNull()
+        if (!extracted.isNullOrBlank()) {
+            trimmed = extracted.trim()
+        }
+    }
+
+    return if (!trimmed.startsWith("http://", ignoreCase = true) &&
+        !trimmed.startsWith("https://", ignoreCase = true) &&
+        !trimmed.startsWith("data:", ignoreCase = true) &&
+        !trimmed.startsWith("content:", ignoreCase = true) &&
+        !trimmed.startsWith("file:", ignoreCase = true)
+    ) {
+        "https://$trimmed"
+    } else {
+        trimmed
+    }
+}
+
+/**
+ * Custom Coil Fetcher to support data:image/...;base64,... URIs
+ */
+class DataUriFetcher(private val dataUri: String, private val options: Options) : Fetcher {
+    override suspend fun fetch(): FetchResult {
+        val base64Data = dataUri.substringAfter("base64,")
+        val bytes = Base64.decode(base64Data, Base64.DEFAULT)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            ?: throw IllegalArgumentException("Could not decode data URI bitmap")
+        return DrawableResult(
+            drawable = BitmapDrawable(options.context.resources, bitmap),
+            isSampled = false,
+            dataSource = DataSource.MEMORY
+        )
+    }
+
+    class Factory : Fetcher.Factory<String> {
+        override fun create(data: String, options: Options, imageLoader: ImageLoader): Fetcher? {
+            if (data.startsWith("data:image/", ignoreCase = true) && data.contains("base64,")) {
+                return DataUriFetcher(data, options)
+            }
+            return null
+        }
+    }
+}
+
 /**
  * Curated public high-resolution sports turf image URLs.
  * Free from Unsplash, fast CDN, zero billing required.
@@ -118,8 +185,12 @@ suspend fun importVenuePhoto(context: Context, uri: Uri): String = withContext(D
 @Composable
 fun VenuePhoto(turf: Turf, modifier: Modifier = Modifier, page: Int = 0) {
     val context = LocalContext.current
-    val effectiveUrls = turf.photoUris.ifEmpty { turf.imageUrls }
-    val uri = effectiveUrls.getOrNull(page) ?: if (page == 0) effectiveUrls.firstOrNull() else null
+    val effectiveUrls = remember(turf.photoUris, turf.imageUrls) {
+        (turf.photoUris.ifEmpty { turf.imageUrls }).map { cleanImageUrl(it) }.filter { it.isNotBlank() }
+    }
+    val uri = if (effectiveUrls.isNotEmpty()) {
+        effectiveUrls.getOrNull(page) ?: effectiveUrls[page % effectiveUrls.size]
+    } else null
 
     val fallback = turf.photoResIds.getOrNull(page) ?: when {
         Sport.BADMINTON in turf.sports -> R.drawable.venue_badminton
@@ -143,6 +214,11 @@ fun VenuePhoto(turf: Turf, modifier: Modifier = Modifier, page: Int = 0) {
                 .crossfade(300)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .diskCachePolicy(CachePolicy.ENABLED)
+                .listener(
+                    onError = { _, result ->
+                        android.util.Log.w("VenuePhoto", "Failed to load venue photo for '${turf.name}': ${result.throwable.message} (url: $uri)")
+                    }
+                )
                 .build()
         }
 

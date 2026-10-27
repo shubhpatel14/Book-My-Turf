@@ -1,8 +1,9 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.bookmyturf.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,15 +11,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.bookmyturf.app.data.*
 import com.bookmyturf.app.ui.AppViewModel
+import com.bookmyturf.app.ui.components.TurfImagePresets
+import com.bookmyturf.app.ui.components.cleanImageUrl
 import com.bookmyturf.app.ui.components.formatInr
 import com.bookmyturf.app.ui.theme.*
 import java.time.LocalDate
@@ -42,15 +53,34 @@ fun TournamentManagement(vm: AppViewModel) {
         if (tournaments.isEmpty()) item { OutlinedButton(onClick = { sampleTournaments().forEach(vm::upsertTournament) }) { Text("PUBLISH SAMPLE TOURNAMENTS") } }
         items(tournaments, key = { it.id }) { tournament ->
             Surface(color = Charcoal, shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, Line)) {
-                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(tournament.name, fontWeight = FontWeight.ExtraBold)
-                    Text("${tournament.sport.label} · ${tournamentDate(tournament.date)} · ${tournament.city}", color = TextMuted)
-                    Text("${tournament.teamSize} players · ${formatInr(tournament.entryFee.toDouble())} entry · ${formatInr(tournament.prizePool.toDouble())} prize", color = Lime, style = MaterialTheme.typography.bodySmall)
-                    Text("${registrations.count { it.tournamentId == tournament.id && it.status == "CONFIRMED" }} / ${tournament.maxTeams} teams", color = TextMuted)
-                    Row {
-                        TextButton(onClick = { editing = tournament }) { Text("EDIT") }
-                        TextButton(onClick = { selected = tournament.id }) { Text("TEAMS") }
-                        Switch(tournament.active, { vm.setTournamentActive(tournament.id, it) })
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val coverUrl = remember(tournament.imageUrls) {
+                        tournament.imageUrls.firstOrNull { it.isNotBlank() }?.let(::cleanImageUrl)
+                    }
+                    if (coverUrl != null) {
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(coverUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = tournament.name,
+                            modifier = Modifier.size(80.dp, 64.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop,
+                            loading = { Box(Modifier.fillMaxSize().background(Steel)) },
+                            error = { Box(Modifier.fillMaxSize().background(Steel)) }
+                        )
+                        Spacer(Modifier.width(12.dp))
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(tournament.name, fontWeight = FontWeight.ExtraBold)
+                        Text("${tournament.sport.label} · ${tournamentDate(tournament.date)} · ${tournament.city}", color = TextMuted)
+                        Text("${tournament.teamSize} players · ${formatInr(tournament.entryFee.toDouble())} entry · ${formatInr(tournament.prizePool.toDouble())} prize", color = Lime, style = MaterialTheme.typography.bodySmall)
+                        Text("${registrations.count { it.tournamentId == tournament.id && it.status == "CONFIRMED" }} / ${tournament.maxTeams} teams", color = TextMuted)
+                        Row {
+                            TextButton(onClick = { editing = tournament }) { Text("EDIT") }
+                            TextButton(onClick = { selected = tournament.id }) { Text("TEAMS") }
+                            Switch(tournament.active, { vm.setTournamentActive(tournament.id, it) })
+                        }
                     }
                 }
             }
@@ -110,16 +140,66 @@ private fun TournamentEditor(initial: Tournament, vm: AppViewModel, onDismiss: (
             OutlinedTextField(prizePool, { prizePool = it }, Modifier.fillMaxWidth(), label = { Text("Prize pool (₹)") })
             OutlinedTextField(description, { description = it }, Modifier.fillMaxWidth(), label = { Text("Description") }, minLines = 2)
             OutlinedTextField(rules, { rules = it }, Modifier.fillMaxWidth(), label = { Text("Rules") }, minLines = 2)
-            Text("Card photos · four HTTPS image URLs", color = TextMuted)
+            Text("Card photos · up to four image URLs", color = TextMuted)
             imageUrls.forEachIndexed { index, url ->
-                OutlinedTextField(url, { value -> imageUrls = imageUrls.toMutableList().also { it[index] = value } }, Modifier.fillMaxWidth(), label = { Text("Image URL ${index + 1}") }, singleLine = true)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val cleanUrl = remember(url) { cleanImageUrl(url) }
+                    if (cleanUrl.isNotBlank()) {
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(cleanUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Preview ${index + 1}",
+                            modifier = Modifier.size(64.dp, 48.dp).clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop,
+                            loading = {
+                                Box(Modifier.fillMaxSize().background(Steel), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = PulseLavender)
+                                }
+                            },
+                            error = {
+                                Box(Modifier.fillMaxSize().background(Steel), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.BrokenImage, null, Modifier.size(20.dp), tint = Danger)
+                                }
+                            }
+                        )
+                    }
+                    OutlinedTextField(
+                        url,
+                        { value -> imageUrls = imageUrls.toMutableList().also { it[index] = value } },
+                        Modifier.weight(1f),
+                        label = { Text("Image URL ${index + 1}") },
+                        singleLine = true
+                    )
+                }
+            }
+            Text("Quick Presets (sports photos):", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TurfImagePresets.items.forEach { (title, presetUrl) ->
+                    OutlinedButton(
+                        onClick = {
+                            val emptyIdx = imageUrls.indexOfFirst { it.isBlank() }
+                            if (emptyIdx >= 0) {
+                                imageUrls = imageUrls.toMutableList().also { it[emptyIdx] = presetUrl }
+                            }
+                        },
+                        enabled = imageUrls.any { it.isBlank() },
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) { Text(title, style = MaterialTheme.typography.labelSmall) }
+                }
             }
             error?.let { Text(it, color = Danger) }
             Button(onClick = {
                 runCatching {
                     val value = initial.copy(id = initial.id.ifBlank { UUID.randomUUID().toString() }, name = name, sport = sport, city = city, venue = venue, date = date, registrationDeadline = deadline,
                         teamSize = teamSize.toInt(), maxTeams = maxTeams.toInt(), entryFee = entryFee.toInt(), prizePool = prizePool.toInt(), description = description, rules = rules,
-                        imageUrls = imageUrls.map(String::trim).filter(String::isNotBlank))
+                        imageUrls = imageUrls.map { cleanImageUrl(it) }.filter(String::isNotBlank))
                     validateTournament(value)
                     value
                 }.onSuccess { vm.upsertTournament(it, onDismiss) }.onFailure { error = it.message ?: "Check the fields." }

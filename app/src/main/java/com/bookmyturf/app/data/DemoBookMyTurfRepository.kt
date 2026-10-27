@@ -36,7 +36,9 @@ class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurf
 
     override suspend fun upsertTournament(tournament: Tournament) {
         validateTournament(tournament)
-        tournamentState.value = (tournamentState.value.filterNot { it.id == tournament.id } + tournament).sortedBy { it.date }
+        val photos = tournament.imageUrls.map { it.trim() }.filter { it.isNotBlank() }.take(4)
+        val cleaned = tournament.copy(imageUrls = photos)
+        tournamentState.value = (tournamentState.value.filterNot { it.id == tournament.id } + cleaned).sortedBy { it.date }
     }
     override suspend fun registerTournament(tournament: Tournament, teamName: String, captainName: String, captainPhone: String, transactionId: String): TournamentRegistration {
         val current = tournamentState.value.firstOrNull { it.id == tournament.id } ?: error("Tournament unavailable.")
@@ -111,9 +113,10 @@ class DemoBookMyTurfRepository(private val storeFile: File? = null) : BookMyTurf
     override suspend fun upsertTurf(turf: Turf) {
         require(turf.name.isNotBlank() && turf.city.isNotBlank() && turf.area.isNotBlank()) { "Name, area and city are required." }
         require(turf.pricePerHour > 0 && turf.sports.isNotEmpty() && turf.openingHour in 0..22 && turf.closingHour in (turf.openingHour + 1)..23) { "Check price, sports and opening hours." }
-        require(turf.rating in 0.0..5.0 && turf.distanceKm >= 0 && turf.photoUris.size <= 4)
+        val photos = turf.photoUris.ifEmpty { turf.imageUrls }.map { it.trim() }.filter { it.isNotBlank() }.take(4)
+        require(turf.rating in 0.0..5.0 && turf.distanceKm >= 0 && photos.size <= 4)
         mutate { current ->
-            val saved = turf.copy(isFavorite = current.turfs.firstOrNull { it.id == turf.id }?.isFavorite ?: turf.isFavorite)
+            val saved = turf.copy(photoUris = photos, isFavorite = current.turfs.firstOrNull { it.id == turf.id }?.isFavorite ?: turf.isFavorite)
             current.copy(turfs = if (current.turfs.any { it.id == turf.id }) current.turfs.map { if (it.id == turf.id) saved else it } else listOf(saved) + current.turfs)
         }
     }

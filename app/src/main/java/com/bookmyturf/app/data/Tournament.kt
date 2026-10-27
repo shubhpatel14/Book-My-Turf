@@ -36,7 +36,13 @@ fun validateTournament(tournament: Tournament) {
     require(tournament.name.isNotBlank() && tournament.city.isNotBlank() && tournament.venue.isNotBlank()) { "Enter a name, city and venue." }
     require(tournament.teamSize in 1..30 && tournament.maxTeams in 2..128) { "Check team size and maximum teams." }
     require(tournament.entryFee in 0..100000 && tournament.prizePool in 0..10000000) { "Check entry fee and prize pool." }
-    require(tournament.imageUrls.size <= 4 && tournament.imageUrls.all { it.startsWith("https://") }) { "Add up to four HTTPS image URLs." }
+    require(tournament.imageUrls.size <= 4 && tournament.imageUrls.all {
+        it.startsWith("http://", ignoreCase = true) ||
+        it.startsWith("https://", ignoreCase = true) ||
+        it.startsWith("data:", ignoreCase = true) ||
+        it.startsWith("content:", ignoreCase = true) ||
+        it.startsWith("file:", ignoreCase = true)
+    }) { "Add up to four valid image URLs." }
     val eventDate = runCatching { java.time.LocalDate.parse(tournament.date) }.getOrNull() ?: error("Use YYYY-MM-DD for the event date.")
     val deadline = runCatching { java.time.LocalDate.parse(tournament.registrationDeadline) }.getOrNull() ?: error("Use YYYY-MM-DD for the registration deadline.")
     require(deadline <= eventDate) { "Registration must close by the event date." }

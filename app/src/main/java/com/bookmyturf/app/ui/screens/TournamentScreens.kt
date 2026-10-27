@@ -38,7 +38,11 @@ import com.bookmyturf.app.ui.AppViewModel
 import com.bookmyturf.app.ui.components.formatInr
 import com.bookmyturf.app.ui.components.TurfImagePresets
 import com.bookmyturf.app.ui.theme.*
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.SubcomposeAsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import com.bookmyturf.app.ui.components.cleanImageUrl
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.time.LocalDate
@@ -56,6 +60,7 @@ internal fun tournamentDate(value: String): String = runCatching {
 
 @Composable
 fun TournamentCard(tournament: Tournament, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val defaultUrls = remember(tournament.sport) {
         val first = when (tournament.sport) {
             Sport.CRICKET -> TurfImagePresets.CRICKET
@@ -64,14 +69,17 @@ fun TournamentCard(tournament: Tournament, onOpen: () -> Unit, modifier: Modifie
         }
         (listOf(first) + TurfImagePresets.items.map { it.second }).distinct().take(4)
     }
-    val photos = remember(tournament.imageUrls, defaultUrls) {
-        (tournament.imageUrls + defaultUrls).distinct().take(4)
+    val userUrls = remember(tournament.imageUrls) {
+        tournament.imageUrls.map { cleanImageUrl(it) }.filter { it.isNotBlank() }
+    }
+    val photos = remember(userUrls, defaultUrls) {
+        userUrls.ifEmpty { defaultUrls }
     }
     val pager = rememberPagerState(pageCount = { photos.size })
     val dragging by pager.interactionSource.collectIsDraggedAsState()
     LaunchedEffect(pager, dragging, photos) {
         if (!dragging && photos.size > 1) while (isActive) {
-            delay(3_500)
+            delay(2_000)
             if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % photos.size, animationSpec = tween(450))
         }
     }
@@ -82,8 +90,21 @@ fun TournamentCard(tournament: Tournament, onOpen: () -> Unit, modifier: Modifie
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1.85f)) {
             HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
+                val request = remember(photos[page]) {
+                    ImageRequest.Builder(context)
+                        .data(photos[page])
+                        .crossfade(300)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .listener(
+                            onError = { _, result ->
+                                android.util.Log.w("TournamentCard", "Failed to load tournament image: ${result.throwable.message} (url: ${photos[page]})")
+                            }
+                        )
+                        .build()
+                }
                 SubcomposeAsyncImage(
-                    model = photos[page], contentDescription = "${tournament.name} photo ${page + 1} of ${photos.size}",
+                    model = request, contentDescription = "${tournament.name} photo ${page + 1} of ${photos.size}",
                     modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                     loading = { Image(painterResource(tournamentPhoto(tournament.sport)), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) },
                     error = { Image(painterResource(tournamentPhoto(tournament.sport)), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
@@ -96,9 +117,11 @@ fun TournamentCard(tournament: Tournament, onOpen: () -> Unit, modifier: Modifie
             Surface(Modifier.align(Alignment.TopEnd).padding(12.dp), color = PulsePurple.copy(.86f), shape = RoundedCornerShape(10.dp)) {
                 Text("TOURNAMENT", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
             }
-            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 13.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                repeat(photos.size) { index ->
-                    Box(Modifier.width(if (pager.currentPage == index) 20.dp else 6.dp).height(6.dp).background(if (pager.currentPage == index) PulseLavender else Color.White.copy(.6f), CircleShape))
+            if (photos.size > 1) {
+                Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 13.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    repeat(photos.size) { index ->
+                        Box(Modifier.width(if (pager.currentPage == index) 20.dp else 6.dp).height(6.dp).background(if (pager.currentPage == index) PulseLavender else Color.White.copy(.6f), CircleShape))
+                    }
                 }
             }
         }
@@ -124,6 +147,7 @@ fun TournamentCard(tournament: Tournament, onOpen: () -> Unit, modifier: Modifie
 
 @Composable
 fun HomeTournamentPosterCard(tournament: Tournament, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val defaultUrls = remember(tournament.sport) {
         val first = when (tournament.sport) {
             Sport.CRICKET -> TurfImagePresets.CRICKET
@@ -132,27 +156,45 @@ fun HomeTournamentPosterCard(tournament: Tournament, onOpen: () -> Unit, modifie
         }
         (listOf(first) + TurfImagePresets.items.map { it.second }).distinct().take(4)
     }
-    val photos = remember(tournament.imageUrls, defaultUrls) { (tournament.imageUrls + defaultUrls).distinct().take(4) }
+    val userUrls = remember(tournament.imageUrls) {
+        tournament.imageUrls.map { cleanImageUrl(it) }.filter { it.isNotBlank() }
+    }
+    val photos = remember(userUrls, defaultUrls) { userUrls.ifEmpty { defaultUrls } }
     val pager = rememberPagerState(pageCount = { photos.size })
     val dragging by pager.interactionSource.collectIsDraggedAsState()
     LaunchedEffect(pager, dragging, photos) {
         if (!dragging && photos.size > 1) while (isActive) {
-            delay(3_500)
+            delay(2_000)
             if (!pager.isScrollInProgress) pager.animateScrollToPage((pager.currentPage + 1) % photos.size, animationSpec = tween(450))
         }
     }
     Card(onClick = onOpen, modifier = modifier, colors = CardDefaults.cardColors(containerColor = Charcoal), shape = RoundedCornerShape(18.dp), border = BorderStroke(1.dp, Line)) {
         Box(Modifier.fillMaxWidth().height(198.dp)) {
             HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
-                SubcomposeAsyncImage(model = photos[page], contentDescription = "${tournament.name} photo ${page + 1} of ${photos.size}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                val request = remember(photos[page]) {
+                    ImageRequest.Builder(context)
+                        .data(photos[page])
+                        .crossfade(300)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .listener(
+                            onError = { _, result ->
+                                android.util.Log.w("HomeTournamentPoster", "Failed to load tournament image: ${result.throwable.message} (url: ${photos[page]})")
+                            }
+                        )
+                        .build()
+                }
+                SubcomposeAsyncImage(model = request, contentDescription = "${tournament.name} photo ${page + 1} of ${photos.size}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
                     loading = { Image(painterResource(tournamentPhoto(tournament.sport)), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) },
                     error = { Image(painterResource(tournamentPhoto(tournament.sport)), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) })
             }
             Surface(Modifier.align(Alignment.TopStart).padding(9.dp), color = Ink.copy(.74f), shape = RoundedCornerShape(18.dp)) {
                 Text(tournament.sport.label.uppercase(), Modifier.padding(horizontal = 8.dp, vertical = 5.dp), color = PulseLavender, style = MaterialTheme.typography.labelSmall)
             }
-            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                repeat(photos.size) { index -> Box(Modifier.width(if (index == pager.currentPage) 18.dp else 5.dp).height(5.dp).background(if (index == pager.currentPage) PulseLavender else Color.White.copy(.7f), CircleShape)) }
+            if (photos.size > 1) {
+                Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    repeat(photos.size) { index -> Box(Modifier.width(if (index == pager.currentPage) 18.dp else 5.dp).height(5.dp).background(if (index == pager.currentPage) PulseLavender else Color.White.copy(.7f), CircleShape)) }
+                }
             }
         }
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {

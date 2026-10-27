@@ -39,7 +39,7 @@ internal fun TurfEditor(initial: Turf, vm: AppViewModel, close: () -> Unit) {
     var closing by remember { mutableStateOf(initial.closingHour.toString()) }
     var indoor by remember { mutableStateOf(initial.isIndoor) }
     var sports by remember { mutableStateOf(initial.sports) }
-    var photos by remember { mutableStateOf(initial.photoUris.ifEmpty { initial.imageUrls }) }
+    var photos by remember(initial.id) { mutableStateOf((initial.photoUris.ifEmpty { initial.imageUrls }).map { cleanImageUrl(it) }.filter { it.isNotBlank() }) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var photoIndex by remember { mutableIntStateOf(0) }
@@ -138,8 +138,9 @@ internal fun TurfEditor(initial: Turf, vm: AppViewModel, close: () -> Unit) {
                             )
                             Button(
                                 onClick = {
-                                    if (newUrlInput.isNotBlank()) {
-                                        photos = photos + newUrlInput.trim()
+                                    val cleaned = cleanImageUrl(newUrlInput)
+                                    if (cleaned.isNotBlank()) {
+                                        photos = photos + cleaned
                                         newUrlInput = ""
                                     }
                                 },
@@ -176,7 +177,8 @@ internal fun TurfEditor(initial: Turf, vm: AppViewModel, close: () -> Unit) {
                     error = "Enter name, area, city, a positive price, valid distance/rating, at least one sport, and valid opening hours."
                 } else {
                     busy = true
-                    val job = vm.upsertTurf(initial.copy(id = initial.id.ifBlank { UUID.randomUUID().toString() }, name = name.trim(), area = area.trim(), city = city.trim(), pricePerHour = parsedPrice, description = desc.trim(), facilities = facilities.split(',').map { it.trim() }.filter { it.isNotBlank() }, sports = sports, isIndoor = indoor, distanceKm = parsedDistance, rating = parsedRating, photoUris = photos, openingHour = open, closingHour = shut), close)
+                    val cleanedPhotos = photos.map { cleanImageUrl(it) }.filter { it.isNotBlank() }
+                    val job = vm.upsertTurf(initial.copy(id = initial.id.ifBlank { UUID.randomUUID().toString() }, name = name.trim(), area = area.trim(), city = city.trim(), pricePerHour = parsedPrice, description = desc.trim(), facilities = facilities.split(',').map { it.trim() }.filter { it.isNotBlank() }, sports = sports, isIndoor = indoor, distanceKm = parsedDistance, rating = parsedRating, photoUris = cleanedPhotos, openingHour = open, closingHour = shut), close)
                     scope.launch { job.join(); busy = false }
                 }
             })

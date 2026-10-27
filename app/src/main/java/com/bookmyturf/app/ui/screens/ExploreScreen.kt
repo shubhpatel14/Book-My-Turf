@@ -35,7 +35,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.SubcomposeAsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import com.bookmyturf.app.ui.components.TurfImagePresets
 import com.bookmyturf.app.ui.components.VenuePhoto
+import com.bookmyturf.app.ui.components.cleanImageUrl
 import com.bookmyturf.app.R
 import com.bookmyturf.app.Routes
 import com.bookmyturf.app.data.Sport
@@ -169,17 +175,7 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
             TournamentCard(tournament, { nav.navigate(Routes.tournament(tournament.id)) }, Modifier.padding(horizontal = 16.dp))
         }
         if (contentFilter != "Tournaments") items(filtered, key = { it.id }) { turf ->
-            val fullyVisible by remember(listState, turf.id, bottomObstruction) {
-                derivedStateOf {
-                    val layout = listState.layoutInfo
-                    val visibleBottom = layout.viewportEndOffset - bottomObstruction
-                    !listState.isScrollInProgress && layout.visibleItemsInfo.any { item ->
-                        item.key == turf.id && item.offset >= layout.viewportStartOffset &&
-                            item.offset + item.size <= visibleBottom
-                    }
-                }
-            }
-            ExploreTurfCard(turf, fullyVisible && !showFilters, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) })
+            ExploreTurfCard(turf, !showFilters, { nav.navigate(Routes.turf(turf.id)) }, { vm.toggleFavorite(turf.id) })
         }
     }
     if (showFilters) ModalBottomSheet(onDismissRequest = { showFilters = false }, containerColor = Charcoal) {
@@ -200,6 +196,7 @@ fun ExploreScreen(vm: AppViewModel, nav: NavController) {
             Button(onClick = { showFilters = false }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = PulsePurple, contentColor = Color.White)) {
                 Text("Show $resultCount results")
             }
+            TextButton(onClick = resetFilters, modifier = Modifier.fillMaxWidth()) { Text("Reset search & filters", color = PulseLavender) }
         }
     }
 }
@@ -217,27 +214,29 @@ private fun ExploreChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun ExploreTurfCard(turf: Turf, isVisible: Boolean, onOpen: () -> Unit, onFavorite: () -> Unit) {
-    val fallbackPhoto = when (turf.visualSeed.mod(6)) {
-        1, 4 -> R.drawable.venue_cricket
-        5 -> R.drawable.venue_badminton
-        else -> R.drawable.venue_football
+internal fun ExploreTurfCard(turf: Turf, isVisible: Boolean = true, onOpen: () -> Unit, onFavorite: () -> Unit) {
+    val context = LocalContext.current
+    val defaultUrls = remember(turf.sports) {
+        val first = when {
+            Sport.CRICKET in turf.sports && Sport.FOOTBALL !in turf.sports -> TurfImagePresets.CRICKET
+            Sport.BADMINTON in turf.sports || Sport.TENNIS in turf.sports -> TurfImagePresets.BADMINTON
+            else -> TurfImagePresets.FOOTBALL
+        }
+        (listOf(first) + TurfImagePresets.items.map { it.second }).distinct().take(4)
     }
-    // Supply four photoResIds on Turf to replace the bundled placeholder views.
-    val photos = remember(turf.photoResIds, fallbackPhoto) {
-        List(4) { index -> turf.photoResIds.getOrNull(index) ?: fallbackPhoto }
+    val userUrls = remember(turf.photoUris, turf.imageUrls) {
+        (turf.photoUris.ifEmpty { turf.imageUrls }).map { cleanImageUrl(it) }.filter { it.isNotBlank() }
     }
-    val pager = rememberPagerState(initialPage = 400, pageCount = { 800 })
+    val photos = remember(userUrls, defaultUrls) {
+        userUrls.ifEmpty { defaultUrls }
+    }
+    val pager = rememberPagerState(pageCount = { photos.size })
     val dragging by pager.interactionSource.collectIsDraggedAsState()
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle, isVisible, dragging) {
-        if (isVisible && !dragging) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (isActive) {
-                delay(2_000)
-                if (!pager.isScrollInProgress) {
-                    if (pager.currentPage == pager.pageCount - 1) pager.scrollToPage(399)
-                    pager.animateScrollToPage(pager.currentPage + 1, animationSpec = tween(400))
-                }
+    LaunchedEffect(pager, dragging, photos, isVisible) {
+        if (isVisible && !dragging && photos.size > 1) while (isActive) {
+            delay(2_000)
+            if (!pager.isScrollInProgress) {
+                pager.animateScrollToPage((pager.currentPage + 1) % photos.size, animationSpec = tween(450))
             }
         }
     }
@@ -248,8 +247,29 @@ internal fun ExploreTurfCard(turf: Turf, isVisible: Boolean, onOpen: () -> Unit,
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1.85f)) {
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
-                val index = page.mod(4)
-                VenuePhoto(turf, Modifier.fillMaxSize(), index)
+                val fallbackRes = turf.photoResIds.getOrNull(page) ?: when {
+                    Sport.BADMINTON in turf.sports -> R.drawable.venue_badminton
+                    Sport.CRICKET in turf.sports && Sport.FOOTBALL !in turf.sports -> R.drawable.venue_cricket
+                    turf.visualSeed % 6 == 1 || turf.visualSeed % 6 == 4 -> R.drawable.venue_cricket
+                    turf.visualSeed % 6 == 5 -> R.drawable.venue_badminton
+                    else -> R.drawable.venue_football
+                }
+                val request = remember(photos[page]) {
+                    ImageRequest.Builder(context)
+                        .data(photos[page])
+                        .crossfade(300)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .build()
+                }
+                SubcomposeAsyncImage(
+                    model = request,
+                    contentDescription = "${turf.name} photo ${page + 1} of ${photos.size}",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    loading = { Image(painterResource(fallbackRes), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) },
+                    error = { Image(painterResource(fallbackRes), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                )
             }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Ink.copy(.2f), Color.Transparent, Ink.copy(.75f)))))
             Surface(Modifier.align(Alignment.TopStart).padding(12.dp), color = Ink.copy(.8f), shape = RoundedCornerShape(10.dp)) {
@@ -259,11 +279,13 @@ internal fun ExploreTurfCard(turf: Turf, isVisible: Boolean, onOpen: () -> Unit,
                 Icon(if (turf.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                     if (turf.isFavorite) "Remove ${turf.name} from favorites" else "Save ${turf.name}", tint = if (turf.isFavorite) PulseLavender else Color.White)
             }
-            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 13.dp).semantics { contentDescription = "Photo ${pager.currentPage.mod(4) + 1} of 4" }, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                repeat(4) { index ->
-                    val selected = pager.currentPage.mod(4) == index
-                    val width by animateDpAsState(if (selected) 20.dp else 6.dp, label = "photo indicator")
-                    Box(Modifier.width(width).height(6.dp).background(if (selected) PulseLavender else Color.White.copy(.65f), CircleShape))
+            if (photos.size > 1) {
+                Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 13.dp).semantics { contentDescription = "Photo ${pager.currentPage + 1} of ${photos.size}" }, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    repeat(photos.size) { index ->
+                        val selected = pager.currentPage == index
+                        val width by animateDpAsState(if (selected) 20.dp else 6.dp, label = "photo indicator")
+                        Box(Modifier.width(width).height(6.dp).background(if (selected) PulseLavender else Color.White.copy(.65f), CircleShape))
+                    }
                 }
             }
         }

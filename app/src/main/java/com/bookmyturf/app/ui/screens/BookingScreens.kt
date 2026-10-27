@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.bookmyturf.app.Routes
+import com.bookmyturf.app.ui.components.cleanImageUrl
 import com.bookmyturf.app.R
 import com.bookmyturf.app.data.*
 import com.bookmyturf.app.ui.*
@@ -106,9 +107,17 @@ fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
 }
 
 @Composable private fun VenuePhotoCarousel(turf: Turf) {
-    val first = when { Sport.BADMINTON in turf.sports -> R.drawable.venue_badminton; Sport.CRICKET in turf.sports && Sport.FOOTBALL !in turf.sports -> R.drawable.venue_cricket; else -> R.drawable.venue_football }
-    val photos = remember(turf.photoResIds, first) { List(4) { turf.photoResIds.getOrNull(it) ?: first } }
-    val pager = rememberPagerState { photos.size }
+    val effectiveUrls = remember(turf.photoUris, turf.imageUrls) {
+        (turf.photoUris.ifEmpty { turf.imageUrls }).map { cleanImageUrl(it) }.filter { it.isNotBlank() }
+    }
+    val pageCount = remember(effectiveUrls, turf.photoResIds) {
+        when {
+            effectiveUrls.isNotEmpty() -> effectiveUrls.size
+            turf.photoResIds.isNotEmpty() -> turf.photoResIds.size
+            else -> 1
+        }
+    }
+    val pager = rememberPagerState { pageCount }
     Box(Modifier.fillMaxWidth().height(275.dp)) {
         HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
             Box(Modifier.fillMaxSize()) {
@@ -116,11 +125,15 @@ fun TurfDetailsScreen(vm: AppViewModel, id: String, nav: NavController) {
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Ink.copy(.1f), Ink.copy(.78f)))))
             }
         }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            repeat(photos.size) { i -> Box(Modifier.width(if (pager.currentPage == i) 24.dp else 6.dp).height(6.dp).background(if (pager.currentPage == i) PulseLavender else Color.White.copy(.5f), CircleShape)) }
+        if (pageCount > 1) {
+            Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                repeat(pageCount) { i -> Box(Modifier.width(if (pager.currentPage == i) 24.dp else 6.dp).height(6.dp).background(if (pager.currentPage == i) PulseLavender else Color.White.copy(.5f), CircleShape)) }
+            }
         }
         Surface(Modifier.align(Alignment.TopStart).padding(14.dp), color = Ink.copy(.82f), shape = RoundedCornerShape(18.dp)) { Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Star, null, Modifier.size(15.dp), tint = Orange); Text(" ${turf.rating}  •  ${turf.distanceKm} KM", style = MaterialTheme.typography.labelMedium) } }
-        Surface(Modifier.align(Alignment.TopEnd).padding(14.dp), color = Ink.copy(.82f), shape = RoundedCornerShape(18.dp)) { Text("${pager.currentPage + 1}/${photos.size}", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium) }
+        if (pageCount > 1) {
+            Surface(Modifier.align(Alignment.TopEnd).padding(14.dp), color = Ink.copy(.82f), shape = RoundedCornerShape(18.dp)) { Text("${pager.currentPage + 1}/$pageCount", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium) }
+        }
     }
 }
 
